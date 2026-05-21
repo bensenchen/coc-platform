@@ -3,14 +3,35 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useProjects } from '@/hooks/useCurrentProject';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { usePages } from '@/hooks/usePages';
 import { Spinner } from '@/components/ui/Spinner';
+import type { Page, PageKind } from '@/models/page.model';
+
+const KIND_LABEL: Record<PageKind, string> = {
+  context: 'Context Page',
+  data: 'Data Page',
+  data_view: 'Data View',
+  interface_list: 'List of Interfaces',
+  icd: 'ICD Page',
+  sheet: 'Sheet Page',
+};
+
+function nextPhase(kind: PageKind): number {
+  switch (kind) {
+    case 'context': return 6;
+    case 'data': case 'data_view': return 7;
+    case 'interface_list': case 'icd': return 9;
+    case 'sheet': return 10;
+  }
+}
 
 export function WorkspacePage() {
-  const { workspaceSlug, projectSlug } = useParams();
+  const { workspaceSlug, projectSlug, pageId } = useParams();
   const navigate = useNavigate();
   const { data: workspaces, isLoading: wsLoading } = useWorkspaces();
   const { currentWorkspace, setCurrentWorkspace, currentProject, setCurrentProject } = useWorkspaceStore();
   const { data: projects } = useProjects(currentWorkspace?.id ?? null);
+  const { data: pages = [] } = usePages(currentProject?.id ?? null);
 
   useEffect(() => {
     if (!workspaces) return;
@@ -27,15 +48,35 @@ export function WorkspacePage() {
 
   if (wsLoading) return <div className="flex h-full items-center justify-center"><Spinner/></div>;
 
-  return (
-    <div className="h-full flex items-center justify-center">
-      <div className="text-center text-slate-400">
-        <div className="text-6xl mb-3">⬡</div>
-        <div className="text-sm font-medium text-slate-600">
-          {currentProject?.name ?? 'No project selected'}
+  const page = pageId ? pages.find((p) => p.id === pageId) ?? null : null;
+
+  if (!page) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center text-slate-400">
+          <div className="text-6xl mb-3">⬡</div>
+          <div className="text-sm font-medium text-slate-600">
+            {currentProject?.name ?? 'No project selected'}
+          </div>
+          <div className="text-xs mt-1">Select a page from the sidebar, or create one with the "+" buttons.</div>
         </div>
-        <div className="text-xs mt-1">Select a page from the sidebar.</div>
-        <div className="text-xs mt-3 text-slate-300">Phase 5+ adds page management.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      <header className="bg-white border-b border-slate-200 px-6 h-12 flex items-center gap-3">
+        <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+          {KIND_LABEL[page.kind]}
+        </span>
+        <h1 className="text-base font-semibold text-slate-900">{page.title}</h1>
+      </header>
+      <div className="flex-1 flex items-center justify-center text-slate-400">
+        <div className="text-center">
+          <div className="text-sm">Page renderer for <strong>{KIND_LABEL[page.kind]}</strong> comes in Phase {nextPhase(page.kind)}+</div>
+          <div className="text-xs mt-1 font-mono text-slate-300">{page.id}</div>
+        </div>
       </div>
     </div>
   );
