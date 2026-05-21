@@ -1,9 +1,9 @@
 import { Providers } from './providers';
 import { AppRoutes } from './routes';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuthInit } from '@/hooks/useAuth';
 
 function AppInner() {
-  useAuth();
+  useAuthInit();
   return <AppRoutes />;
 }
 
