@@ -5,7 +5,7 @@ import { useProjects } from '@/hooks/useCurrentProject';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { usePages } from '@/hooks/usePages';
 import { Spinner } from '@/components/ui/Spinner';
-import type { Page, PageKind } from '@/models/page.model';
+import type { PageKind } from '@/models/page.model';
 
 const KIND_LABEL: Record<PageKind, string> = {
   context: 'Context Page',
