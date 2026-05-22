@@ -46,9 +46,10 @@ export async function createWorkspace(name: string): Promise<Workspace> {
   throw new Error('Could not generate a unique slug');
 }
 
-export async function renameWorkspace(id: string, name: string): Promise<Workspace> {
-  const { data, error } = await supabase
-    .from('workspace').update({ name }).eq('id', id).select().single();
+export async function createWorkspace(name: string): Promise<Workspace> {
+  const { data, error } = await supabase.rpc('create_workspace_for_user', {
+    workspace_name: name,
+  });
   if (error) throw error;
   return mapWorkspace(data);
 }
