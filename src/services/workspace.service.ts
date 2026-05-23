@@ -1,5 +1,4 @@
 import { supabase } from '@/infrastructure/supabase/client';
-import { slugify } from '@/lib/slug';
 import type { Workspace, WorkspaceRole } from '@/models/workspace.model';
 import type { WorkspaceInvitation } from '@/models/invitation.model';
 
@@ -27,23 +26,11 @@ export interface WorkspaceMemberView {
 }
 
 export async function createWorkspace(name: string): Promise<Workspace> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
-
-  const baseSlug = slugify(name) || 'workspace';
-  let slug = baseSlug;
-  let attempt = 1;
-  while (attempt < 100) {
-    const { data, error } = await supabase
-      .from('workspace')
-      .insert({ name, slug, created_by: user.id })
-      .select()
-      .single();
-    if (!error) return mapWorkspace(data);
-    if (error.code === '23505') { attempt++; slug = `${baseSlug}-${attempt}`; continue; }
-    throw error;
-  }
-  throw new Error('Could not generate a unique slug');
+  const { data, error } = await supabase.rpc('create_workspace_for_user', {
+    workspace_name: name,
+  });
+  if (error) throw error;
+  return mapWorkspace(data);
 }
 
 export async function renameWorkspace(id: string, name: string): Promise<Workspace> {
