@@ -42,7 +42,6 @@ export async function createPage(
   if (error) throw error;
   const page = mapPage(data);
 
-  // Seed default columns based on kind
   if (kind === 'data') {
     await supabase.from('sheet_column').insert([
       { page_id: page.id, name: 'Level', position: 0, data_type: 'text', is_default: true },
@@ -75,4 +74,14 @@ export async function deletePage(id: string): Promise<void> {
   const { error } = await supabase
     .from('page').update({ deleted_at: new Date().toISOString() }).eq('id', id);
   if (error) throw error;
+}
+
+export async function updatePageMeta(
+  id: string,
+  metadata: Record<string, unknown>,
+): Promise<Page> {
+  const { data, error } = await supabase
+    .from('page').update({ metadata }).eq('id', id).select().single();
+  if (error) throw error;
+  return mapPage(data);
 }
