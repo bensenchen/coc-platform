@@ -5,6 +5,8 @@ import { useProjects } from '@/hooks/useCurrentProject';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { usePages } from '@/hooks/usePages';
 import { Spinner } from '@/components/ui/Spinner';
+import { ContextCanvas, ContextToolBar, PropertiesPanel } from '@/features/context-page';
+import { useCanvasStore } from '@/stores/canvas.store';
 import type { PageKind } from '@/models/page.model';
 
 const KIND_LABEL: Record<PageKind, string> = {
@@ -18,10 +20,10 @@ const KIND_LABEL: Record<PageKind, string> = {
 
 function nextPhase(kind: PageKind): number {
   switch (kind) {
-    case 'context': return 6;
     case 'data': case 'data_view': return 7;
     case 'interface_list': case 'icd': return 9;
     case 'sheet': return 10;
+    default: return 99;
   }
 }
 
@@ -32,6 +34,7 @@ export function WorkspacePage() {
   const { currentWorkspace, setCurrentWorkspace, currentProject, setCurrentProject } = useWorkspaceStore();
   const { data: projects } = useProjects(currentWorkspace?.id ?? null);
   const { data: pages = [] } = usePages(currentProject?.id ?? null);
+  const clearCanvas = useCanvasStore((s) => s.clearSelection);
 
   useEffect(() => {
     if (!workspaces) return;
@@ -46,7 +49,9 @@ export function WorkspacePage() {
     if (p && p.id !== currentProject?.id) setCurrentProject(p);
   }, [projectSlug, projects, currentProject, setCurrentProject]);
 
-  if (wsLoading) return <div className="flex h-full items-center justify-center"><Spinner/></div>;
+  useEffect(() => { clearCanvas(); }, [pageId, clearCanvas]);
+
+  if (wsLoading) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
 
   const page = pageId ? pages.find((p) => p.id === pageId) ?? null : null;
 
@@ -59,6 +64,24 @@ export function WorkspacePage() {
             {currentProject?.name ?? 'No project selected'}
           </div>
           <div className="text-xs mt-1">Select a page from the sidebar, or create one with the "+" buttons.</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (page.kind === 'context') {
+    return (
+      <div className="h-full flex flex-col overflow-hidden">
+        <header className="bg-white border-b border-slate-200 px-6 h-12 flex items-center gap-3 flex-shrink-0">
+          <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+            {KIND_LABEL[page.kind]}
+          </span>
+          <h1 className="text-base font-semibold text-slate-900">{page.title}</h1>
+        </header>
+        <ContextToolBar pageId={page.id} />
+        <div className="flex flex-1 overflow-hidden">
+          <ContextCanvas pageId={page.id} />
+          <PropertiesPanel pageId={page.id} />
         </div>
       </div>
     );
