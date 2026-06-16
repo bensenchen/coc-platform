@@ -15,6 +15,14 @@ const SHAPE_KINDS: { kind: ShapeKind; label: string }[] = [
   { kind: 'cylinder', label: 'Cylinder'  },
 ];
 
+const CONNECTOR_KINDS = [
+  { kind: 'arrow',        label: 'Arrow →'      },
+  { kind: 'dashed-arrow', label: 'Dashed →'     },
+  { kind: 'double-arrow', label: '← Arrow →'    },
+  { kind: 'line',         label: 'Line ─'       },
+  { kind: 'dashed-line',  label: 'Dashed ─'     },
+];
+
 interface Props {
   pageId: string;
 }
@@ -34,11 +42,15 @@ export function PropertiesPanel({ pageId }: Props) {
     setName(obj?.name ?? '');
   }, [obj?.id, obj?.name]);
 
-  if (!obj) return null;
+  // Always reserve the panel width to prevent canvas from resizing
+  if (!obj) {
+    return <div className="w-56 flex-shrink-0 border-l border-slate-200 bg-white" />;
+  }
 
   const isShape = obj.type === 'shape';
   const isConnector = obj.type === 'connector';
   const shapeKind: ShapeKind = (obj.metadata as any)?.shapeKind ?? 'rect';
+  const connectorKind: string = (obj.metadata as any)?.connectorKind ?? 'arrow';
 
   function commitName() {
     if (!obj) return;
@@ -48,9 +60,14 @@ export function PropertiesPanel({ pageId }: Props) {
     }
   }
 
-  function setKind(kind: ShapeKind) {
+  function setShapeKind(kind: ShapeKind) {
     if (!obj) return;
     updateObj.mutate({ id: obj.id, patch: { metadata: { ...(obj.metadata as any), shapeKind: kind } } });
+  }
+
+  function setConnectorKind(kind: string) {
+    if (!obj) return;
+    updateObj.mutate({ id: obj.id, patch: { metadata: { ...(obj.metadata as any), connectorKind: kind } } });
   }
 
   function togglePhysical() {
@@ -82,12 +99,27 @@ export function PropertiesPanel({ pageId }: Props) {
         />
       </label>
 
+      {isConnector && (
+        <label className="block mb-3">
+          <span className="text-xs text-slate-600 mb-1 block">Style</span>
+          <select
+            value={connectorKind}
+            onChange={(e) => setConnectorKind(e.target.value)}
+            className="w-full h-9 rounded-md border border-slate-300 text-xs px-2"
+          >
+            {CONNECTOR_KINDS.map(({ kind, label }) => (
+              <option key={kind} value={kind}>{label}</option>
+            ))}
+          </select>
+        </label>
+      )}
+
       {isShape && (
         <label className="block mb-3">
           <span className="text-xs text-slate-600 mb-1 block">Shape</span>
           <select
             value={shapeKind}
-            onChange={(e) => setKind(e.target.value as ShapeKind)}
+            onChange={(e) => setShapeKind(e.target.value as ShapeKind)}
             className="w-full h-9 rounded-md border border-slate-300 text-xs px-2"
           >
             {SHAPE_KINDS.map(({ kind, label }) => (
@@ -106,7 +138,7 @@ export function PropertiesPanel({ pageId }: Props) {
 
       {isShape && obj.isPhysical && (
         <p className="text-[10px] text-amber-600 bg-amber-50 rounded p-2 mb-3">
-          Data page auto-linking comes in Phase 7.
+          Data page auto-link — Phase 7
         </p>
       )}
 
