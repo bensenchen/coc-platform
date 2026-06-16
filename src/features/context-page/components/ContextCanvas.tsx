@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
-import { Stage, Layer, Arrow, Circle } from 'react-konva';
+import { Stage, Layer, Arrow, Rect, Circle } from 'react-konva';
 import { useCanvasObjects } from '@/hooks/useCanvasObjects';
 import {
   useCreateObject,
@@ -13,8 +13,7 @@ import { anchorPoint } from './anchor';
 import { Spinner } from '@/components/ui/Spinner';
 import type { CanvasObject } from '@/models/canvas-object.model';
 
-const DEFAULT_W = 120;
-const DEFAULT_H = 60;
+const MIN_DRAW = 10;
 
 interface Props {
   pageId: string;
@@ -23,6 +22,8 @@ interface Props {
 export function ContextCanvas({ pageId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 800, height: 600 });
+  const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
+  const [drawPreview, setDrawPreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   const { data, isLoading } = useCanvasObjects(pageId);
   const createObj = useCreateObject(pageId);
@@ -67,35 +68,75 @@ export function ContextCanvas({ pageId }: Props) {
       if (e.key === 'Escape') {
         finishConnect();
         clearSelection();
+        setDrawStart(null);
+        setDrawPreview(null);
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [selectedIds, deleteObj, clearSelection, finishConnect]);
 
+  const handleMouseDown = useCallback(
+    (e: any) => {
+      if (tool !== 'shape') return;
+      const stage = e.target.getStage();
+      if (e.target !== stage) return; // only on empty canvas
+      const pos = stage.getRelativePointerPosition();
+      setDrawStart(pos);
+      setDrawPreview({ x: pos.x, y: pos.y, w: 0, h: 0 });
+    },
+    [tool],
+  );
+
+  const handleMouseMove = useCallback(
+    (e: any) => {
+      if (tool !== 'shape' || !drawStart) return;
+      const stage = e.target.getStage();
+      const pos = stage.getRelativePointerPosition();
+      setDrawPreview({
+        x: Math.min(drawStart.x, pos.x),
+        y: Math.min(drawStart.y, pos.y),
+        w: Math.abs(pos.x - drawStart.x),
+        h: Math.abs(pos.y - drawStart.y),
+      });
+    },
+    [tool, drawStart],
+  );
+
+  const handleMouseUp = useCallback(
+    (e: any) => {
+      if (tool !== 'shape' || !drawStart) return;
+      const stage = e.target.getStage();
+      const pos = stage.getRelativePointerPosition();
+      const x = Math.min(drawStart.x, pos.x);
+      const y = Math.min(drawStart.y, pos.y);
+      const w = Math.abs(pos.x - drawStart.x);
+      const h = Math.abs(pos.y - drawStart.y);
+      setDrawStart(null);
+      setDrawPreview(null);
+      if (w > MIN_DRAW && h > MIN_DRAW) {
+        createObj.mutate({
+          type: 'shape',
+          positionX: x,
+          positionY: y,
+          width: w,
+          height: h,
+          metadata: { shapeKind: activeShapeKind },
+        });
+      }
+    },
+    [tool, drawStart, activeShapeKind, createObj],
+  );
+
   const handleStageClick = useCallback(
     (e: any) => {
       const stage = e.target.getStage();
-      const pos = stage.getRelativePointerPosition();
-
-      if (tool === 'shape') {
-        createObj.mutate({
-          type: 'shape',
-          positionX: pos.x - DEFAULT_W / 2,
-          positionY: pos.y - DEFAULT_H / 2,
-          width: DEFAULT_W,
-          height: DEFAULT_H,
-          metadata: { shapeKind: activeShapeKind },
-        });
-        return;
-      }
-
       if (e.target === stage || e.target.getParent() === stage.findOne('Layer')) {
         clearSelection();
         finishConnect();
       }
     },
-    [tool, activeShapeKind, createObj, clearSelection, finishConnect],
+    [clearSelection, finishConnect],
   );
 
   const handleWheel = useCallback(
@@ -164,11 +205,15 @@ export function ContextCanvas({ pageId }: Props) {
   const connectors = objects.filter((o) => o.type === 'connector');
   const objMap = new Map(objects.map((o) => [o.id, o]));
 
+  // Select and pan tools both allow dragging the canvas background
+  const stageDraggable = tool === 'select' || tool === 'pan';
+  const cursor = tool === 'shape' ? 'crosshair' : tool === 'connector' ? 'cell' : 'default';
+
   return (
     <div
       ref={containerRef}
       className="flex-1 overflow-hidden bg-slate-100"
-      style={{ cursor: tool === 'shape' ? 'crosshair' : tool === 'connector' ? 'cell' : 'default' }}
+      style={{ cursor }}
     >
       <Stage
         width={size.width}
@@ -177,12 +222,13 @@ export function ContextCanvas({ pageId }: Props) {
         scaleY={zoom}
         x={panX}
         y={panY}
+        draggable={stageDraggable}
         onClick={handleStageClick}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
         onWheel={handleWheel}
-        draggable={tool === 'pan'}
-        onDragEnd={(e: any) => {
-          if (tool === 'pan') setPan(e.target.x(), e.target.y());
-        }}
+        onDragEnd={(e: any) => setPan(e.target.x(), e.target.y())}
       >
         <Layer>
           {connectors.map((conn) => {
@@ -193,15 +239,17 @@ export function ContextCanvas({ pageId }: Props) {
             if (!src || !tgt) return null;
             const [sx, sy] = anchorPoint(src, anchor.sourceAnchor ?? 'center');
             const [tx, ty] = anchorPoint(tgt, anchor.targetAnchor ?? 'center');
+            const isSelected = selectedIds.includes(conn.id);
             return (
               <Arrow
                 key={conn.id}
                 points={[sx, sy, tx, ty]}
-                stroke={selectedIds.includes(conn.id) ? '#3b82f6' : '#64748b'}
-                strokeWidth={selectedIds.includes(conn.id) ? 2 : 1.5}
-                fill={selectedIds.includes(conn.id) ? '#3b82f6' : '#64748b'}
+                stroke={isSelected ? '#3b82f6' : '#64748b'}
+                strokeWidth={isSelected ? 2 : 1.5}
+                fill={isSelected ? '#3b82f6' : '#64748b'}
                 pointerLength={8}
                 pointerWidth={7}
+                hitStrokeWidth={12}
                 onClick={(e: any) => { e.cancelBubble = true; setSelection([conn.id]); }}
               />
             );
@@ -214,8 +262,8 @@ export function ContextCanvas({ pageId }: Props) {
                 key={obj.id}
                 x={obj.positionX}
                 y={obj.positionY}
-                width={obj.width ?? DEFAULT_W}
-                height={obj.height ?? DEFAULT_H}
+                width={obj.width ?? 120}
+                height={obj.height ?? 60}
                 kind={kind}
                 name={obj.name}
                 isPhysical={obj.isPhysical}
@@ -233,6 +281,20 @@ export function ContextCanvas({ pageId }: Props) {
             const [cx, cy] = anchorPoint(src, 'center');
             return <Circle x={cx} y={cy} radius={6} fill="#3b82f6" opacity={0.6} listening={false} />;
           })()}
+
+          {drawPreview && drawPreview.w > MIN_DRAW && drawPreview.h > MIN_DRAW && (
+            <Rect
+              x={drawPreview.x}
+              y={drawPreview.y}
+              width={drawPreview.w}
+              height={drawPreview.h}
+              stroke="#3b82f6"
+              strokeWidth={1}
+              dash={[4, 4]}
+              fill="rgba(59,130,246,0.05)"
+              listening={false}
+            />
+          )}
         </Layer>
       </Stage>
     </div>
