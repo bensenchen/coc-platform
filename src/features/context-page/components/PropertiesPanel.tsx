@@ -36,6 +36,8 @@ export function PropertiesPanel({ pageId }: Props) {
 
   if (!obj) return null;
 
+  const isShape = obj.type === 'shape';
+  const isConnector = obj.type === 'connector';
   const shapeKind: ShapeKind = (obj.metadata as any)?.shapeKind ?? 'rect';
 
   function commitName() {
@@ -64,10 +66,12 @@ export function PropertiesPanel({ pageId }: Props) {
 
   return (
     <div className="w-56 flex-shrink-0 bg-white border-l border-slate-200 p-4 overflow-y-auto">
-      <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Properties</h3>
+      <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+        {isConnector ? 'Connector' : 'Shape'}
+      </h3>
 
       <label className="block mb-3">
-        <span className="text-xs text-slate-600 mb-1 block">Name</span>
+        <span className="text-xs text-slate-600 mb-1 block">Label</span>
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -78,7 +82,7 @@ export function PropertiesPanel({ pageId }: Props) {
         />
       </label>
 
-      {obj.type === 'shape' && (
+      {isShape && (
         <label className="block mb-3">
           <span className="text-xs text-slate-600 mb-1 block">Shape</span>
           <select
@@ -93,11 +97,17 @@ export function PropertiesPanel({ pageId }: Props) {
         </label>
       )}
 
-      {obj.type === 'shape' && (
+      {isShape && (
         <label className="flex items-center gap-2 mb-4 cursor-pointer">
           <input type="checkbox" checked={obj.isPhysical} onChange={togglePhysical} className="rounded" />
           <span className="text-xs text-slate-700">Physical component</span>
         </label>
+      )}
+
+      {isShape && obj.isPhysical && (
+        <p className="text-[10px] text-amber-600 bg-amber-50 rounded p-2 mb-3">
+          Data page auto-linking comes in Phase 7.
+        </p>
       )}
 
       <div className="pt-2 border-t border-slate-100">
