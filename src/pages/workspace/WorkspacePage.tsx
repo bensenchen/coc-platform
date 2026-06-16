@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { usePages } from '@/hooks/usePages';
 import { Spinner } from '@/components/ui/Spinner';
 import { ContextCanvas, ContextToolBar, PropertiesPanel } from '@/features/context-page';
+import { DataTable } from '@/features/data-page';
 import { useCanvasStore } from '@/stores/canvas.store';
 import type { PageKind } from '@/models/page.model';
 
@@ -20,9 +21,9 @@ const KIND_LABEL: Record<PageKind, string> = {
 
 function nextPhase(kind: PageKind): number {
   switch (kind) {
-    case 'data': case 'data_view': return 7;
+    case 'data_view': return 8;
     case 'interface_list': case 'icd': return 9;
-    case 'sheet': return 10;
+    case 'sheet': return 8;
     default: return 99;
   }
 }
@@ -73,9 +74,7 @@ export function WorkspacePage() {
     return (
       <div className="h-full flex flex-col overflow-hidden">
         <header className="bg-white border-b border-slate-200 px-6 h-12 flex items-center gap-3 flex-shrink-0">
-          <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
-            {KIND_LABEL[page.kind]}
-          </span>
+          <span className="text-xs font-medium uppercase tracking-wider text-slate-500">{KIND_LABEL[page.kind]}</span>
           <h1 className="text-base font-semibold text-slate-900">{page.title}</h1>
         </header>
         <ContextToolBar pageId={page.id} />
@@ -87,12 +86,22 @@ export function WorkspacePage() {
     );
   }
 
+  if (page.kind === 'data') {
+    return (
+      <div className="h-full flex flex-col overflow-hidden">
+        <header className="bg-white border-b border-slate-200 px-6 h-12 flex items-center gap-3 flex-shrink-0">
+          <span className="text-xs font-medium uppercase tracking-wider text-slate-500">{KIND_LABEL[page.kind]}</span>
+          <h1 className="text-base font-semibold text-slate-900">{page.title}</h1>
+        </header>
+        <DataTable pageId={page.id} />
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex flex-col">
       <header className="bg-white border-b border-slate-200 px-6 h-12 flex items-center gap-3">
-        <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
-          {KIND_LABEL[page.kind]}
-        </span>
+        <span className="text-xs font-medium uppercase tracking-wider text-slate-500">{KIND_LABEL[page.kind]}</span>
         <h1 className="text-base font-semibold text-slate-900">{page.title}</h1>
       </header>
       <div className="flex-1 flex items-center justify-center text-slate-400">
