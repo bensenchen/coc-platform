@@ -111,13 +111,15 @@ export function SheetTable({ sheetPage, projectId }: Props) {
   }
 
   function moveCol(col: MergedCol, dir: -1 | 1) {
-    const ids = orderedCols.map((c) => c.id);
-    const idx = ids.indexOf(col.id);
-    const next = idx + dir;
-    if (next < 0 || next >= ids.length) return;
-    [ids[idx], ids[next]] = [ids[next], ids[idx]];
-    updateColOrder.mutate(ids);
-  }
+  const ids = orderedCols.map((c) => c.id);
+  const idx = ids.indexOf(col.id);
+  const next = idx + dir;
+  if (next < 0 || next >= ids.length) return;
+  const tmp = ids[idx]!;
+  ids[idx] = ids[next]!;
+  ids[next] = tmp;
+  updateColOrder.mutate(ids);
+}
 
   function handleAddCol() {
     if (!newColName.trim()) return;
