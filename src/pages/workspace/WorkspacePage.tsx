@@ -78,10 +78,10 @@ export function WorkspacePage() {
 
       {page.kind === 'context' && (
         <div className="flex flex-col flex-1 overflow-hidden">
-          <ContextToolBar />
+          <ContextToolBar pageId={page.id} />
           <div className="flex flex-1 overflow-hidden">
             <ContextCanvas pageId={page.id} />
-            <PropertiesPanel />
+            <PropertiesPanel pageId={page.id} />
           </div>
         </div>
       )}
