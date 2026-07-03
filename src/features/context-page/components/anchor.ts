@@ -1,4 +1,8 @@
-import type { CanvasObject } from '@/models/canvas-object.model';
+import type { CanvasObject, AnchorPosition } from '@/models/canvas-object.model';
+
+const EDGE_ANCHORS: AnchorPosition[] = [
+  'top', 'top_right', 'right', 'bottom_right', 'bottom', 'bottom_left', 'left', 'top_left',
+];
 
 export function anchorPoint(
   obj: Pick<CanvasObject, 'positionX' | 'positionY' | 'width' | 'height'>,
@@ -37,4 +41,23 @@ export function borderPoint(
   if (dx === 0 && dy === 0) return [cx, cy];
   const t = Math.min((w / 2) / Math.abs(dx), (h / 2) / Math.abs(dy));
   return [cx + dx * t, cy + dy * t];
+}
+
+// The edge anchor of obj closest to point (px, py)
+export function nearestAnchor(
+  obj: Pick<CanvasObject, 'positionX' | 'positionY' | 'width' | 'height'>,
+  px: number,
+  py: number,
+): AnchorPosition {
+  let best: AnchorPosition = 'top';
+  let bestDist = Infinity;
+  for (const a of EDGE_ANCHORS) {
+    const [ax, ay] = anchorPoint(obj, a);
+    const d = (ax - px) ** 2 + (ay - py) ** 2;
+    if (d < bestDist) {
+      bestDist = d;
+      best = a;
+    }
+  }
+  return best;
 }
