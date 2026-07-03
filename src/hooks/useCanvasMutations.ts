@@ -4,10 +4,12 @@ import {
   updateObject,
   deleteObject,
   createConnector,
+  updateConnectorAnchor,
   type CreateObjectProps,
   type UpdateObjectPatch,
+  type ConnectorEndpoint,
 } from '@/services/canvas-object.service';
-import type { AnchorPosition } from '@/models/canvas-object.model';
+import type { ConnectorAnchor } from '@/models/canvas-object.model';
 
 function invalidate(qc: ReturnType<typeof useQueryClient>, pageId: string) {
   qc.invalidateQueries({ queryKey: ['canvas', pageId] });
@@ -41,16 +43,23 @@ export function useCreateConnector(pageId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
-      sourceId,
-      sourceAnchor,
-      targetId,
-      targetAnchor,
+      source,
+      target,
+      metadata,
     }: {
-      sourceId: string;
-      sourceAnchor: AnchorPosition;
-      targetId: string;
-      targetAnchor: AnchorPosition;
-    }) => createConnector(pageId, sourceId, sourceAnchor, targetId, targetAnchor),
+      source: ConnectorEndpoint;
+      target: ConnectorEndpoint;
+      metadata?: Record<string, unknown>;
+    }) => createConnector(pageId, source, target, metadata ?? {}),
+    onSuccess: () => invalidate(qc, pageId),
+  });
+}
+
+export function useUpdateAnchor(pageId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ connectorId, patch }: { connectorId: string; patch: Partial<ConnectorAnchor> }) =>
+      updateConnectorAnchor(connectorId, patch),
     onSuccess: () => invalidate(qc, pageId),
   });
 }
