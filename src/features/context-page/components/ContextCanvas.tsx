@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
-import { Stage, Layer, Arrow, Rect, Circle, Group, Text } from 'react-konva';
+import { Stage, Layer, Arrow, Rect, Group, Text } from 'react-konva';
 import { useCanvasObjects } from '@/hooks/useCanvasObjects';
 import {
   useCreateObject,
