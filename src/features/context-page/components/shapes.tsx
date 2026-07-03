@@ -21,6 +21,7 @@ interface ShapeProps {
   draggable?: boolean;
   onDragEnd?: (x: number, y: number) => void;
   onClick?: (e?: any) => void;
+  onMouseDown?: (e?: any) => void;
 }
 
 function shapeStroke(isSelected: boolean) {
@@ -54,7 +55,7 @@ function Label({ x, y, width, height, text }: { x: number; y: number; width: num
 
 export function ShapeNode({
   x, y, width, height, kind, name, isPhysical, isSelected,
-  draggable = true, onDragEnd, onClick,
+  draggable = true, onDragEnd, onClick, onMouseDown,
 }: ShapeProps) {
   const fill = shapeFill(isPhysical);
   const stroke = shapeStroke(isSelected);
@@ -66,6 +67,7 @@ export function ShapeNode({
       ? (e: any) => onDragEnd(e.target.x(), e.target.y())
       : undefined,
     onClick,
+    onMouseDown,
   };
 
   switch (kind) {
