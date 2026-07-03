@@ -1,16 +1,27 @@
+import { useNavigate, useParams } from 'react-router-dom';
 import { useProjects } from '@/hooks/useCurrentProject';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { ChevronDown } from 'lucide-react';
 
 export function ProjectSwitcher() {
+  const navigate = useNavigate();
+  const { workspaceSlug } = useParams();
   const { currentWorkspace, currentProject, setCurrentProject } = useWorkspaceStore();
   const { data: projects = [] } = useProjects(currentWorkspace?.id ?? null);
+
+  function handleChange(id: string) {
+    const p = projects.find((x) => x.id === id);
+    if (!p) return;
+    setCurrentProject(p);
+    const wslug = currentWorkspace?.slug ?? workspaceSlug;
+    if (wslug) navigate(`/w/${wslug}/p/${p.slug}`);
+  }
 
   return (
     <div className="relative mt-2">
       <select
         value={currentProject?.id ?? ''}
-        onChange={(e) => setCurrentProject(projects.find((p) => p.id === e.target.value) ?? null)}
+        onChange={(e) => handleChange(e.target.value)}
         disabled={!currentWorkspace}
         className="w-full appearance-none bg-slate-800 text-slate-200 text-xs px-2.5 py-1.5 rounded pr-7 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
       >
