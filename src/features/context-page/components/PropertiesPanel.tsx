@@ -4,6 +4,7 @@ import { useUpdateObject, useDeleteObject } from '@/hooks/useCanvasMutations';
 import { useCanvasObjects } from '@/hooks/useCanvasObjects';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { resolveConnStyle } from './connector-utils';
 import type { ShapeKind } from '@/models/canvas-object.model';
 
 const SHAPE_KINDS: { kind: ShapeKind; label: string }[] = [
@@ -13,14 +14,6 @@ const SHAPE_KINDS: { kind: ShapeKind; label: string }[] = [
   { kind: 'diamond',  label: 'Diamond'   },
   { kind: 'triangle', label: 'Triangle'  },
   { kind: 'cylinder', label: 'Cylinder'  },
-];
-
-const CONNECTOR_KINDS = [
-  { kind: 'arrow',        label: 'Arrow →'      },
-  { kind: 'dashed-arrow', label: 'Dashed →'     },
-  { kind: 'double-arrow', label: '← Arrow →'    },
-  { kind: 'line',         label: 'Line ─'       },
-  { kind: 'dashed-line',  label: 'Dashed ─'     },
 ];
 
 interface Props {
@@ -50,7 +43,7 @@ export function PropertiesPanel({ pageId }: Props) {
   const isShape = obj.type === 'shape';
   const isConnector = obj.type === 'connector';
   const shapeKind: ShapeKind = (obj.metadata as any)?.shapeKind ?? 'rect';
-  const connectorKind: string = (obj.metadata as any)?.connectorKind ?? 'arrow';
+  const connStyle = resolveConnStyle(obj.metadata as any);
 
   function commitName() {
     if (!obj) return;
@@ -60,14 +53,9 @@ export function PropertiesPanel({ pageId }: Props) {
     }
   }
 
-  function setShapeKind(kind: ShapeKind) {
+  function setMeta(patch: Record<string, unknown>) {
     if (!obj) return;
-    updateObj.mutate({ id: obj.id, patch: { metadata: { ...(obj.metadata as any), shapeKind: kind } } });
-  }
-
-  function setConnectorKind(kind: string) {
-    if (!obj) return;
-    updateObj.mutate({ id: obj.id, patch: { metadata: { ...(obj.metadata as any), connectorKind: kind } } });
+    updateObj.mutate({ id: obj.id, patch: { metadata: { ...(obj.metadata as any), ...patch } } });
   }
 
   function togglePhysical() {
@@ -80,6 +68,8 @@ export function PropertiesPanel({ pageId }: Props) {
     deleteObj.mutate(obj.id);
     clearSelection();
   }
+
+  const selectCls = 'w-full h-9 rounded-md border border-slate-300 text-xs px-2 text-slate-900 bg-white';
 
   return (
     <div className="w-56 flex-shrink-0 bg-white border-l border-slate-200 p-4 overflow-y-auto">
@@ -100,18 +90,58 @@ export function PropertiesPanel({ pageId }: Props) {
       </label>
 
       {isConnector && (
-        <label className="block mb-3">
-          <span className="text-xs text-slate-600 mb-1 block">Style</span>
-          <select
-            value={connectorKind}
-            onChange={(e) => setConnectorKind(e.target.value)}
-            className="w-full h-9 rounded-md border border-slate-300 text-xs px-2"
-          >
-            {CONNECTOR_KINDS.map(({ kind, label }) => (
-              <option key={kind} value={kind}>{label}</option>
-            ))}
-          </select>
-        </label>
+        <>
+          <label className="block mb-3">
+            <span className="text-xs text-slate-600 mb-1 block">Path</span>
+            <select
+              value={connStyle.pathKind}
+              onChange={(e) => setMeta({ pathKind: e.target.value })}
+              className={selectCls}
+            >
+              <option value="straight">Straight</option>
+              <option value="elbow">Elbow</option>
+              <option value="curved">Curved</option>
+              <option value="freehand">Freehand</option>
+            </select>
+          </label>
+
+          <label className="block mb-3">
+            <span className="text-xs text-slate-600 mb-1 block">Line</span>
+            <select
+              value={connStyle.lineStyle}
+              onChange={(e) => setMeta({ lineStyle: e.target.value })}
+              className={selectCls}
+            >
+              <option value="solid">Solid</option>
+              <option value="dashed">Dashed</option>
+            </select>
+          </label>
+
+          <div className="flex gap-2 mb-3">
+            <label className="block flex-1">
+              <span className="text-xs text-slate-600 mb-1 block">Start end</span>
+              <select
+                value={connStyle.startCap}
+                onChange={(e) => setMeta({ startCap: e.target.value })}
+                className={selectCls}
+              >
+                <option value="none">None</option>
+                <option value="arrow">Arrow</option>
+              </select>
+            </label>
+            <label className="block flex-1">
+              <span className="text-xs text-slate-600 mb-1 block">End end</span>
+              <select
+                value={connStyle.endCap}
+                onChange={(e) => setMeta({ endCap: e.target.value })}
+                className={selectCls}
+              >
+                <option value="none">None</option>
+                <option value="arrow">Arrow</option>
+              </select>
+            </label>
+          </div>
+        </>
       )}
 
       {isShape && (
@@ -119,8 +149,8 @@ export function PropertiesPanel({ pageId }: Props) {
           <span className="text-xs text-slate-600 mb-1 block">Shape</span>
           <select
             value={shapeKind}
-            onChange={(e) => setShapeKind(e.target.value as ShapeKind)}
-            className="w-full h-9 rounded-md border border-slate-300 text-xs px-2"
+            onChange={(e) => setMeta({ shapeKind: e.target.value })}
+            className={selectCls}
           >
             {SHAPE_KINDS.map(({ kind, label }) => (
               <option key={kind} value={kind}>{label}</option>
@@ -129,16 +159,14 @@ export function PropertiesPanel({ pageId }: Props) {
         </label>
       )}
 
-      {isShape && (
-        <label className="flex items-center gap-2 mb-4 cursor-pointer">
-          <input type="checkbox" checked={obj.isPhysical} onChange={togglePhysical} className="rounded" />
-          <span className="text-xs text-slate-700">Physical component</span>
-        </label>
-      )}
+      <label className="flex items-center gap-2 mb-4 cursor-pointer">
+        <input type="checkbox" checked={obj.isPhysical} onChange={togglePhysical} className="rounded" />
+        <span className="text-xs text-slate-700">Physical Part</span>
+      </label>
 
       {isShape && obj.isPhysical && (
         <p className="text-[10px] text-amber-600 bg-amber-50 rounded p-2 mb-3">
-          Data page auto-link — Phase 7
+          Data page auto-link — coming soon
         </p>
       )}
 
