@@ -1,8 +1,12 @@
-import { MousePointer2, Square, Circle, Diamond, Triangle, Cylinder, Waypoints, Hand, ZoomIn, ZoomOut, Maximize2, Trash2 } from 'lucide-react';
+import {
+  MousePointer2, Square, Circle, Diamond, Triangle, Cylinder, Hand,
+  MoveUpRight, CornerUpRight, Spline, PenTool,
+  ZoomIn, ZoomOut, Maximize2, Trash2,
+} from 'lucide-react';
 import { useCanvasStore, type CanvasTool } from '@/stores/canvas.store';
 import { useDeleteObject } from '@/hooks/useCanvasMutations';
 import { cn } from '@/lib/cn';
-import type { ShapeKind } from '@/models/canvas-object.model';
+import type { ShapeKind, ConnectorKind } from '@/models/canvas-object.model';
 
 const SHAPES: { kind: ShapeKind; label: string; icon: React.ReactNode }[] = [
   { kind: 'rect',     label: 'Rectangle',  icon: <Square size={14} /> },
@@ -13,6 +17,13 @@ const SHAPES: { kind: ShapeKind; label: string; icon: React.ReactNode }[] = [
   { kind: 'cylinder', label: 'Cylinder',   icon: <Cylinder size={14} /> },
 ];
 
+const CONNECTORS: { kind: ConnectorKind; label: string; icon: React.ReactNode }[] = [
+  { kind: 'straight', label: 'Straight connector', icon: <MoveUpRight size={14} /> },
+  { kind: 'elbow',    label: 'Elbow connector',    icon: <CornerUpRight size={14} /> },
+  { kind: 'curved',   label: 'Curved connector',   icon: <Spline size={14} /> },
+  { kind: 'freehand', label: 'Draw connector',     icon: <PenTool size={14} /> },
+];
+
 interface Props {
   pageId: string;
   onFitView?: () => void;
@@ -20,8 +31,8 @@ interface Props {
 
 export function ToolBar({ pageId, onFitView }: Props) {
   const {
-    tool, activeShapeKind,
-    setTool, setActiveShapeKind, setZoom,
+    tool, activeShapeKind, activeConnectorKind,
+    setTool, setActiveShapeKind, setActiveConnectorKind, setZoom,
     zoom, selectedIds, clearSelection,
   } = useCanvasStore();
   const deleteObj = useDeleteObject(pageId);
@@ -71,7 +82,21 @@ export function ToolBar({ pageId, onFitView }: Props) {
 
       <div className="w-px h-5 bg-slate-200 mx-1" />
 
-      {btn('connector', <Waypoints size={14} />, 'Connector')}
+      {CONNECTORS.map(({ kind, label, icon }) => (
+        <button
+          key={kind}
+          title={label}
+          onClick={() => setActiveConnectorKind(kind)}
+          className={cn(
+            'p-1.5 rounded',
+            tool === 'connector' && activeConnectorKind === kind
+              ? 'bg-blue-100 text-blue-700'
+              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700',
+          )}
+        >
+          {icon}
+        </button>
+      ))}
 
       <div className="w-px h-5 bg-slate-200 mx-1" />
 
