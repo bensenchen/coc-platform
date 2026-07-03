@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Plus, LogOut, MoreHorizontal } from 'lucide-react';
+import { Plus, LogOut, MoreHorizontal, Home } from 'lucide-react';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { useAuth } from '@/hooks/useAuth';
@@ -22,12 +22,13 @@ interface SectionDef {
 
 const SECTIONS: SectionDef[] = [
   { id: 'context',   label: 'CONTEXT PAGES',   kinds: ['context'],                    createKind: 'context' },
-  { id: 'data',      label: 'DATA PAGES',      kinds: ['data', 'data_view'] },
+  { id: 'data',      label: 'DATA PAGES',      kinds: ['data', 'data_view'],          createKind: 'data' },
   { id: 'interface', label: 'INTERFACE PAGES', kinds: ['interface_list', 'icd'],      createKind: 'interface_list' },
   { id: 'mgmt',      label: 'MGMT PAGES',      kinds: ['sheet'],                      createKind: 'sheet' },
 ];
 
 export function Sidebar() {
+  const navigate = useNavigate();
   const { signOut, user } = useAuth();
   const collapsed = useUIStore((s) => s.collapsedSections);
   const toggleSection = useUIStore((s) => s.toggleSection);
@@ -38,6 +39,12 @@ export function Sidebar() {
   return (
     <aside className="h-full bg-sidebar flex flex-col text-slate-200">
       <div className="p-3 border-b border-slate-800">
+        <button
+          onClick={() => navigate('/home')}
+          className="w-full flex items-center gap-2 text-slate-300 hover:text-white hover:bg-sidebar-hover rounded px-2 py-1.5 mb-2 text-sm"
+        >
+          <Home size={14} /> Home
+        </button>
         <WorkspaceSwitcher />
         <ProjectSwitcher />
       </div>
