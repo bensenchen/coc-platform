@@ -9,9 +9,9 @@ import {
 } from '@/hooks/useCanvasMutations';
 import { useCanvasStore } from '@/stores/canvas.store';
 import { ShapeNode } from './shapes';
-import { borderPoint } from './anchor';
+import { borderPoint, anchorPoint, nearestAnchor } from './anchor';
 import { Spinner } from '@/components/ui/Spinner';
-import type { CanvasObject } from '@/models/canvas-object.model';
+import type { CanvasObject, AnchorPosition } from '@/models/canvas-object.model';
 
 const MIN_DRAW = 10;
 const DEFAULT_W = 120;
@@ -25,11 +25,18 @@ function objCenter(o: CanvasObject): [number, number] {
   return [o.positionX + (o.width ?? DEFAULT_W) / 2, o.positionY + (o.height ?? DEFAULT_H) / 2];
 }
 
+function containsPoint(o: CanvasObject, px: number, py: number): boolean {
+  const w = o.width ?? DEFAULT_W;
+  const h = o.height ?? DEFAULT_H;
+  return px >= o.positionX && px <= o.positionX + w && py >= o.positionY && py <= o.positionY + h;
+}
+
 export function ContextCanvas({ pageId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [drawPreview, setDrawPreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [connectPointer, setConnectPointer] = useState<{ x: number; y: number } | null>(null);
 
   const { data, isLoading } = useCanvasObjects(pageId);
   const createObj = useCreateObject(pageId);
@@ -45,6 +52,8 @@ export function ContextCanvas({ pageId }: Props) {
     panX,
     panY,
     connectingFromId,
+    connectingFromAnchor,
+    setTool,
     setSelection,
     clearSelection,
     setZoom,
@@ -76,11 +85,20 @@ export function ContextCanvas({ pageId }: Props) {
         clearSelection();
         setDrawStart(null);
         setDrawPreview(null);
+        setConnectPointer(null);
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [selectedIds, deleteObj, clearSelection, finishConnect]);
+
+  const objects = data?.objects ?? [];
+  const anchors = data?.anchors ?? [];
+  const shapes = objects.filter((o) => o.type !== 'connector');
+  const connectors = objects.filter((o) => o.type === 'connector');
+  const objMap = new Map(objects.map((o) => [o.id, o]));
+
+  // --- Shape drawing (shape tool) ---
 
   const handleMouseDown = useCallback(
     (e: any) => {
@@ -96,22 +114,49 @@ export function ContextCanvas({ pageId }: Props) {
 
   const handleMouseMove = useCallback(
     (e: any) => {
-      if (tool !== 'shape' || !drawStart) return;
-      const pos = e.target.getStage().getRelativePointerPosition();
-      setDrawPreview({
-        x: Math.min(drawStart.x, pos.x),
-        y: Math.min(drawStart.y, pos.y),
-        w: Math.abs(pos.x - drawStart.x),
-        h: Math.abs(pos.y - drawStart.y),
-      });
+      const stage = e.target.getStage();
+      if (tool === 'shape' && drawStart) {
+        const pos = stage.getRelativePointerPosition();
+        setDrawPreview({
+          x: Math.min(drawStart.x, pos.x),
+          y: Math.min(drawStart.y, pos.y),
+          w: Math.abs(pos.x - drawStart.x),
+          h: Math.abs(pos.y - drawStart.y),
+        });
+      }
+      if (tool === 'connector' && connectingFromId) {
+        setConnectPointer(stage.getRelativePointerPosition());
+      }
     },
-    [tool, drawStart],
+    [tool, drawStart, connectingFromId],
   );
 
   const handleMouseUp = useCallback(
     (e: any) => {
+      const stage = e.target.getStage();
+
+      // Finish a connector drag: drop on a target shape
+      if (tool === 'connector' && connectingFromId) {
+        const pos = stage.getRelativePointerPosition();
+        const target = [...shapes]
+          .reverse()
+          .find((o) => o.id !== connectingFromId && containsPoint(o, pos.x, pos.y));
+        if (target) {
+          createConn.mutate({
+            sourceId: connectingFromId,
+            sourceAnchor: connectingFromAnchor ?? 'center',
+            targetId: target.id,
+            targetAnchor: nearestAnchor(target, pos.x, pos.y),
+          });
+        }
+        finishConnect();
+        setConnectPointer(null);
+        return;
+      }
+
+      // Finish shape drawing
       if (tool !== 'shape' || !drawStart) return;
-      const pos = e.target.getStage().getRelativePointerPosition();
+      const pos = stage.getRelativePointerPosition();
       const w = Math.abs(pos.x - drawStart.x);
       const h = Math.abs(pos.y - drawStart.y);
       const start = drawStart;
@@ -128,7 +173,6 @@ export function ContextCanvas({ pageId }: Props) {
           metadata: { shapeKind: activeShapeKind },
         });
       } else {
-        // Plain click — place default-sized shape centered on click
         createObj.mutate({
           type: 'shape',
           positionX: start.x - DEFAULT_W / 2,
@@ -138,20 +182,23 @@ export function ContextCanvas({ pageId }: Props) {
           metadata: { shapeKind: activeShapeKind },
         });
       }
+
+      // One shape created — return to the select tool
+      setTool('select');
     },
-    [tool, drawStart, activeShapeKind, createObj],
+    [tool, drawStart, activeShapeKind, createObj, setTool,
+     connectingFromId, connectingFromAnchor, shapes, createConn, finishConnect],
   );
 
   const handleStageClick = useCallback(
     (e: any) => {
-      if (tool === 'shape') return; // mouseUp already handled it
+      if (tool === 'shape' || tool === 'connector') return;
       const stage = e.target.getStage();
       if (e.target === stage || e.target.getParent() === stage.findOne('Layer')) {
         clearSelection();
-        finishConnect();
       }
     },
-    [tool, clearSelection, finishConnect],
+    [tool, clearSelection],
   );
 
   const handleWheel = useCallback(
@@ -176,26 +223,27 @@ export function ContextCanvas({ pageId }: Props) {
     [setZoom, setPan],
   );
 
+  // Press on a shape with the connector tool: start dragging a link
+  // from the nearest edge anchor to the pointer.
+  const handleShapeMouseDown = useCallback(
+    (obj: CanvasObject, e: any) => {
+      if (tool !== 'connector') return;
+      e.cancelBubble = true;
+      const stage = e.target.getStage();
+      const pos = stage.getRelativePointerPosition();
+      startConnect(obj.id, nearestAnchor(obj, pos.x, pos.y));
+      setConnectPointer(pos);
+    },
+    [tool, startConnect],
+  );
+
   const handleObjectClick = useCallback(
     (obj: CanvasObject, e: any) => {
+      if (tool === 'connector') return;
       e.cancelBubble = true;
-      if (tool === 'connector') {
-        if (!connectingFromId) {
-          startConnect(obj.id);
-        } else if (connectingFromId !== obj.id) {
-          createConn.mutate({
-            sourceId: connectingFromId,
-            sourceAnchor: 'center',
-            targetId: obj.id,
-            targetAnchor: 'center',
-          });
-          finishConnect();
-        }
-        return;
-      }
       setSelection([obj.id]);
     },
-    [tool, connectingFromId, startConnect, createConn, finishConnect, setSelection],
+    [tool, setSelection],
   );
 
   const handleDragEnd = useCallback(
@@ -213,14 +261,20 @@ export function ContextCanvas({ pageId }: Props) {
     );
   }
 
-  const objects = data?.objects ?? [];
-  const anchors = data?.anchors ?? [];
-  const shapes = objects.filter((o) => o.type !== 'connector');
-  const connectors = objects.filter((o) => o.type === 'connector');
-  const objMap = new Map(objects.map((o) => [o.id, o]));
-
   const stageDraggable = tool === 'select' || tool === 'pan';
-  const cursor = tool === 'shape' ? 'crosshair' : tool === 'connector' ? 'cell' : 'default';
+  const cursor = tool === 'shape' ? 'crosshair' : tool === 'connector' ? 'crosshair' : 'default';
+
+  // A connector end uses its pinned anchor; 'center' falls back to the
+  // dynamic border point aimed at the other object.
+  function endpoint(
+    self: CanvasObject,
+    selfAnchor: AnchorPosition | null,
+    other: CanvasObject,
+  ): [number, number] {
+    if (selfAnchor && selfAnchor !== 'center') return anchorPoint(self, selfAnchor);
+    const [ocx, ocy] = objCenter(other);
+    return borderPoint(self, ocx, ocy);
+  }
 
   return (
     <div ref={containerRef} className="flex-1 overflow-hidden bg-slate-100" style={{ cursor }}>
@@ -237,7 +291,11 @@ export function ContextCanvas({ pageId }: Props) {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
-        onDragEnd={(e: any) => setPan(e.target.x(), e.target.y())}
+        onDragEnd={(e: any) => {
+          // Shape drags bubble up here too — only pan when the STAGE
+          // itself was dragged, otherwise the whole canvas jumps.
+          if (e.target === e.target.getStage()) setPan(e.target.x(), e.target.y());
+        }}
       >
         <Layer>
           {/* Connectors */}
@@ -248,10 +306,8 @@ export function ContextCanvas({ pageId }: Props) {
             const tgt = anchor.targetObjectId ? objMap.get(anchor.targetObjectId) : null;
             if (!src || !tgt) return null;
 
-            const [tcx, tcy] = objCenter(tgt);
-            const [scx, scy] = objCenter(src);
-            const [sx, sy] = borderPoint(src, tcx, tcy);
-            const [tx, ty] = borderPoint(tgt, scx, scy);
+            const [sx, sy] = endpoint(src, anchor.sourceAnchor, tgt);
+            const [tx, ty] = endpoint(tgt, anchor.targetAnchor, src);
 
             const isSelected = selectedIds.includes(conn.id);
             const color = isSelected ? '#3b82f6' : '#64748b';
@@ -294,7 +350,7 @@ export function ContextCanvas({ pageId }: Props) {
             );
           })}
 
-          {/* Shapes */}
+          {/* Shapes — draggable only when already selected */}
           {shapes.map((obj) => {
             const kind = (obj.metadata as any)?.shapeKind ?? 'rect';
             return (
@@ -308,19 +364,33 @@ export function ContextCanvas({ pageId }: Props) {
                 name={obj.name}
                 isPhysical={obj.isPhysical}
                 isSelected={selectedIds.includes(obj.id)}
-                draggable={tool === 'select'}
+                draggable={tool === 'select' && selectedIds.includes(obj.id)}
                 onDragEnd={(x, y) => handleDragEnd(obj.id, x, y)}
                 onClick={(e: any) => handleObjectClick(obj, e)}
+                onMouseDown={(e: any) => handleShapeMouseDown(obj, e)}
               />
             );
           })}
 
-          {/* Connecting-from indicator */}
-          {connectingFromId && (() => {
+          {/* Live preview line while dragging a connector */}
+          {tool === 'connector' && connectingFromId && connectPointer && (() => {
             const src = objMap.get(connectingFromId);
             if (!src) return null;
-            const [cx, cy] = objCenter(src);
-            return <Circle x={cx} y={cy} radius={6} fill="#3b82f6" opacity={0.6} listening={false} />;
+            const [sx, sy] = connectingFromAnchor
+              ? anchorPoint(src, connectingFromAnchor)
+              : objCenter(src);
+            return (
+              <Arrow
+                points={[sx, sy, connectPointer.x, connectPointer.y]}
+                stroke="#3b82f6"
+                strokeWidth={1.5}
+                fill="#3b82f6"
+                dash={[6, 3]}
+                pointerLength={8}
+                pointerWidth={7}
+                listening={false}
+              />
+            );
           })()}
 
           {/* Draw preview */}
