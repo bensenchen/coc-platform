@@ -1,5 +1,5 @@
 import { supabase } from '@/infrastructure/supabase/client';
-import type { CanvasObject, CanvasObjectType, ConnectorAnchor, AnchorPosition, ShapeKind } from '@/models/canvas-object.model';
+import type { CanvasObject, CanvasObjectType, ConnectorAnchor, AnchorPosition } from '@/models/canvas-object.model';
 
 function mapObject(row: any): CanvasObject {
   return {
@@ -126,13 +126,20 @@ export async function deleteObject(id: string): Promise<void> {
   if (error) throw error;
 }
 
+// Each connector end is either anchored to a shape (objectId + anchor)
+// or floats at a free canvas point. The free point is always saved in
+// the connector's metadata so it survives un-anchoring.
+export interface ConnectorEndpoint {
+  objectId: string | null;
+  anchor: AnchorPosition | null;
+  point: { x: number; y: number };
+}
+
 export async function createConnector(
   pageId: string,
-  sourceObjectId: string,
-  sourceAnchor: AnchorPosition,
-  targetObjectId: string,
-  targetAnchor: AnchorPosition,
-  shapeKind?: ShapeKind,
+  source: ConnectorEndpoint,
+  target: ConnectorEndpoint,
+  metadata: Record<string, unknown> = {},
 ): Promise<{ obj: CanvasObject; anchor: ConnectorAnchor }> {
   const { data: { user } } = await supabase.auth.getUser();
   const { data: objData, error: objErr } = await supabase
@@ -142,7 +149,7 @@ export async function createConnector(
       type: 'connector',
       position_x: 0,
       position_y: 0,
-      metadata: shapeKind ? { connectorKind: shapeKind } : {},
+      metadata: { ...metadata, sourcePoint: source.point, targetPoint: target.point },
       created_by: user?.id ?? null,
     })
     .select()
@@ -153,10 +160,10 @@ export async function createConnector(
     .from('connector_anchor')
     .insert({
       connector_id: objData.id,
-      source_object_id: sourceObjectId,
-      source_anchor: sourceAnchor,
-      target_object_id: targetObjectId,
-      target_anchor: targetAnchor,
+      source_object_id: source.objectId,
+      source_anchor: source.anchor,
+      target_object_id: target.objectId,
+      target_anchor: target.anchor,
     })
     .select()
     .single();
