@@ -1,7 +1,7 @@
 export type CanvasObjectType = 'shape' | 'connector' | 'post_it' | 'mini_sheet' | 'attachment' | 'picture';
 export type AnchorPosition = 'top' | 'right' | 'bottom' | 'left' | 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right' | 'center';
 export type ShapeKind = 'rect' | 'diamond' | 'ellipse' | 'triangle' | 'process' | 'cylinder';
-export type ConnectorKind = 'straight' | 'elbow' | 'curved';
+export type ConnectorKind = 'straight' | 'elbow' | 'curved' | 'freehand';
 
 export interface CanvasObject {
   id: string;
