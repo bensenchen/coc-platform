@@ -41,6 +41,14 @@ export async function deleteColumn(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function reorderColumns(orderedIds: string[]): Promise<void> {
+  const results = await Promise.all(
+    orderedIds.map((id, idx) => supabase.from('sheet_column').update({ position: idx }).eq('id', id)),
+  );
+  const bad = results.find((r) => r.error);
+  if (bad?.error) throw bad.error;
+}
+
 // ── Rows ─────────────────────────────────────────────────────────────────────
 
 export async function listRows(pageId: string): Promise<SheetRow[]> {
@@ -60,6 +68,14 @@ export async function createRow(pageId: string, canvasObjectId?: string): Promis
 export async function deleteRow(id: string): Promise<void> {
   const { error } = await supabase.from('sheet_row').delete().eq('id', id);
   if (error) throw error;
+}
+
+export async function reorderRows(orderedIds: string[]): Promise<void> {
+  const results = await Promise.all(
+    orderedIds.map((id, idx) => supabase.from('sheet_row').update({ position: idx }).eq('id', id)),
+  );
+  const bad = results.find((r) => r.error);
+  if (bad?.error) throw bad.error;
 }
 
 // ── Cells ─────────────────────────────────────────────────────────────────────
