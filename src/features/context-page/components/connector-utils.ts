@@ -23,6 +23,18 @@ export function resolveConnStyle(md: Record<string, any> | null | undefined): Co
   };
 }
 
+// Cubic bezier points for a curved connector whose ends leave/enter
+// perpendicular to the shape edge (along the given outward normals).
+// Render with <Arrow bezier points={...} />.
+export function curvedPoints(
+  sx: number, sy: number, snx: number, sny: number,
+  tx: number, ty: number, tnx: number, tny: number,
+): number[] {
+  const len = Math.hypot(tx - sx, ty - sy);
+  const d = Math.min(80, Math.max(24, len / 3));
+  return [sx, sy, sx + snx * d, sy + sny * d, tx + tnx * d, ty + tny * d, tx, ty];
+}
+
 export function pathPoints(
   kind: ConnectorKind,
   sx: number,
