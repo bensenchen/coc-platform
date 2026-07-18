@@ -44,6 +44,7 @@ export function PropertiesPanel({ pageId }: Props) {
   const isConnector = obj.type === 'connector';
   const shapeKind: ShapeKind = (obj.metadata as any)?.shapeKind ?? 'rect';
   const connStyle = resolveConnStyle(obj.metadata as any);
+  const fontSize: number = (obj.metadata as any)?.fontSize ?? (isConnector ? 10 : 11);
 
   function commitName() {
     if (!obj) return;
