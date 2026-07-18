@@ -146,18 +146,29 @@ export function PropertiesPanel({ pageId }: Props) {
       )}
 
       {isShape && (
-        <label className="block mb-3">
-          <span className="text-xs text-slate-600 mb-1 block">Shape</span>
-          <select
-            value={shapeKind}
-            onChange={(e) => setMeta({ shapeKind: e.target.value })}
-            className={selectCls}
-          >
-            {SHAPE_KINDS.map(({ kind, label }) => (
-              <option key={kind} value={kind}>{label}</option>
-            ))}
-          </select>
-        </label>
+      <label className="block mb-3">
+        <span className="text-xs text-slate-600 mb-1 block">Name</span>
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => { if (e.key === 'Enter') commitName(); }}
+          placeholder="Unnamed"
+          className="text-xs"
+        />
+      </label>
+      <label className="block mb-3">
+        <span className="text-xs text-slate-600 mb-1 block">Text size</span>
+        <select
+          value={fontSize}
+          onChange={(e) => setMeta({ fontSize: Number(e.target.value) })}
+          className={selectCls}
+        >
+          {[8, 9, 10, 11, 12, 14, 16, 18, 20, 24].map((s) => (
+            <option key={s} value={s}>{s} px</option>
+          ))}
+        </select>
+      </label>
       )}
 
       <label className="flex items-center gap-2 mb-4 cursor-pointer">
