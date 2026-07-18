@@ -22,6 +22,7 @@ interface ShapeProps {
   onDragEnd?: (x: number, y: number) => void;
   onClick?: (e?: any) => void;
   onMouseDown?: (e?: any) => void;
+  fontSize?: number;
 }
 
 function shapeStroke(isSelected: boolean) {
@@ -34,7 +35,7 @@ function shapeFill(isPhysical: boolean) {
   return isPhysical ? PHYSICAL_FILL : FILL;
 }
 
-function Label({ x, y, width, height, text }: { x: number; y: number; width: number; height: number; text: string }) {
+function Label({ x, y, width, height, text, fontSize = 11 }: { x: number; y: number; width: number; height: number; text: string; fontSize?: number }) {
   return (
     <Text
       x={x + LABEL_PADDING}
@@ -42,7 +43,7 @@ function Label({ x, y, width, height, text }: { x: number; y: number; width: num
       width={width - LABEL_PADDING * 2}
       height={height - LABEL_PADDING * 2}
       text={text}
-      fontSize={11}
+      fontSize={fontSize}
       fontFamily="Inter, system-ui, sans-serif"
       fill="#1e293b"
       align="center"
@@ -55,7 +56,7 @@ function Label({ x, y, width, height, text }: { x: number; y: number; width: num
 
 export function ShapeNode({
   x, y, width, height, kind, name, isPhysical, isSelected,
-  draggable = true, onDragEnd, onClick, onMouseDown,
+  draggable = true, onDragEnd, onClick, onMouseDown, fontSize = 11,
 }: ShapeProps) {
   const fill = shapeFill(isPhysical);
   const stroke = shapeStroke(isSelected);
@@ -75,7 +76,7 @@ export function ShapeNode({
       return (
         <Group {...commonGroup}>
           <Rect width={width} height={height} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
-          {name && <Label x={0} y={0} width={width} height={height} text={name} />}
+          {name && <Label x={0} y={0} width={width} height={height} text={name} fontSize={fontSize} />}
         </Group>
       );
 
@@ -83,7 +84,7 @@ export function ShapeNode({
       return (
         <Group {...commonGroup}>
           <Rect width={width} height={height} fill={fill} stroke={stroke} strokeWidth={strokeWidth} cornerRadius={10} />
-          {name && <Label x={0} y={0} width={width} height={height} text={name} />}
+          {name && <Label x={0} y={0} width={width} height={height} text={name} fontSize={fontSize} />}
         </Group>
       );
 
@@ -95,7 +96,7 @@ export function ShapeNode({
             radiusX={width / 2} radiusY={height / 2}
             fill={fill} stroke={stroke} strokeWidth={strokeWidth}
           />
-          {name && <Label x={0} y={0} width={width} height={height} text={name} />}
+          {name && <Label x={0} y={0} width={width} height={height} text={name} fontSize={fontSize} />}
         </Group>
       );
 
@@ -104,7 +105,7 @@ export function ShapeNode({
       return (
         <Group {...commonGroup}>
           <Line closed points={pts} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
-          {name && <Label x={width * 0.2} y={height * 0.2} width={width * 0.6} height={height * 0.6} text={name} />}
+          {name && <Label x={width * 0.2} y={height * 0.2} width={width * 0.6} height={height * 0.6} text={name} fontSize={fontSize} />}
         </Group>
       );
     }
@@ -114,7 +115,7 @@ export function ShapeNode({
       return (
         <Group {...commonGroup}>
           <Line closed points={pts} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
-          {name && <Label x={width * 0.1} y={height * 0.4} width={width * 0.8} height={height * 0.4} text={name} />}
+          {name && <Label x={width * 0.1} y={height * 0.4} width={width * 0.8} height={height * 0.4} text={name} fontSize={fontSize} />}
         </Group>
       );
     }
@@ -126,7 +127,7 @@ export function ShapeNode({
           <Rect x={0} y={ry} width={width} height={height - ry} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
           <Ellipse x={width / 2} y={ry} radiusX={width / 2} radiusY={ry} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
           <Ellipse x={width / 2} y={height} radiusX={width / 2} radiusY={ry} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
-          {name && <Label x={0} y={ry} width={width} height={height - ry} text={name} />}
+          {name && <Label x={0} y={ry} width={width} height={height - ry} text={name} fontSize={fontSize} />}
         </Group>
       );
     }
