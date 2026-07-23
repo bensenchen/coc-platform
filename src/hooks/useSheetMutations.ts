@@ -6,6 +6,8 @@ import {
   createRow,
   deleteRow,
   upsertCell,
+  reorderCloumns,
+  reorderRows,
 } from '@/services/sheet.service';
 
 function inv(qc: ReturnType<typeof useQueryClient>, pageId: string) {
@@ -49,6 +51,22 @@ export function useDeleteRow(pageId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteRow(id),
+    onSuccess: () => inv(qc, pageId),
+  });
+}
+
+export function useReorderColumns(pageId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderedIds: string[]) => reorderColumns(orderedIds),
+    onSuccess: () => inv(qc, pageId),
+  });
+}
+
+export function useReorderRows(pageId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderedIds: string[]) => reorderRows(orderedIds),
     onSuccess: () => inv(qc, pageId),
   });
 }
