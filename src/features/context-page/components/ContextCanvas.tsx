@@ -11,7 +11,7 @@ import {
 import { useCanvasStore } from '@/stores/canvas.store';
 import { ShapeNode } from './shapes';
 import { borderPoint, anchorPoint, nearestAnchor, anchorsFor, outwardNormal } from './anchor';
-import { resolveConnStyle, pathPoints, curvedPoints } from './connector-utils';
+import { resolveConnStyle, pathPoints, curvedPoints, elbowPoints } from './connector-utils';
 import { Spinner } from '@/components/ui/Spinner';
 import type { CanvasObject, AnchorPosition, ShapeKind } from '@/models/canvas-object.model';
 
@@ -394,17 +394,20 @@ export function ContextCanvas({ pageId }: Props) {
 
     const style = resolveConnStyle(md);
     const isCurved = style.pathKind === 'curved';
+    const isElbow = style.pathKind === 'elbow';
 
-    // Curved connectors leave/enter perpendicular to the shape edge
+    // Curved and elbow connectors leave/enter perpendicular to the shape edge
     let pts: number[];
-    if (isCurved) {
+    if (isCurved || isElbow) {
       const [snx, sny] = src && anchor?.sourceAnchor && anchor.sourceAnchor !== 'center'
         ? outwardNormal(src, anchor.sourceAnchor, kindOf(src))
         : unitTowards(sx, sy, tx, ty);
       const [tnx, tny] = tgt && anchor?.targetAnchor && anchor.targetAnchor !== 'center'
         ? outwardNormal(tgt, anchor.targetAnchor, kindOf(tgt))
         : unitTowards(tx, ty, sx, sy);
-      pts = curvedPoints(sx, sy, snx, sny, tx, ty, tnx, tny);
+      pts = isCurved
+        ? curvedPoints(sx, sy, snx, sny, tx, ty, tnx, tny)
+        : elbowPoints(sx, sy, snx, sny, tx, ty, tnx, tny);
     } else {
       pts = pathPoints(style.pathKind, sx, sy, tx, ty, md.freehandPoints as number[] | undefined);
       if (style.pathKind === 'freehand' && pts.length >= 4) {
@@ -521,14 +524,18 @@ export function ContextCanvas({ pageId }: Props) {
           {tool === 'connector' && pendingStart && connectPointer && (() => {
             let pts: number[];
             let bezier = false;
-            if (activeConnectorKind === 'curved') {
+            if (activeConnectorKind === 'curved' || activeConnectorKind === 'elbow') {
               const sObj = pendingStart.objectId ? objMap.get(pendingStart.objectId) : undefined;
               const [snx, sny] = sObj && pendingStart.anchor && pendingStart.anchor !== 'center'
                 ? outwardNormal(sObj, pendingStart.anchor, kindOf(sObj))
                 : unitTowards(pendingStart.x, pendingStart.y, connectPointer.x, connectPointer.y);
               const [tnx, tny] = unitTowards(connectPointer.x, connectPointer.y, pendingStart.x, pendingStart.y);
-              pts = curvedPoints(pendingStart.x, pendingStart.y, snx, sny, connectPointer.x, connectPointer.y, tnx, tny);
-              bezier = true;
+              if (activeConnectorKind === 'curved') {
+                pts = curvedPoints(pendingStart.x, pendingStart.y, snx, sny, connectPointer.x, connectPointer.y, tnx, tny);
+                bezier = true;
+              } else {
+                pts = elbowPoints(pendingStart.x, pendingStart.y, snx, sny, connectPointer.x, connectPointer.y, tnx, tny);
+              }
             } else {
               pts = pathPoints(activeConnectorKind, pendingStart.x, pendingStart.y, connectPointer.x, connectPointer.y);
             }
