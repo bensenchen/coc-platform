@@ -6,7 +6,7 @@ import {
   createRow,
   deleteRow,
   upsertCell,
-  reorderCloumns,
+  reorderColumns,
   reorderRows,
 } from '@/services/sheet.service';
 
