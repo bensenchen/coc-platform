@@ -17,10 +17,15 @@ interface Props {
 }
 
 function moveId(ids: string[], dragId: string, targetId: string): string[] {
+  const from = ids.indexOf(dragId);
+  const to = ids.indexOf(targetId);
+  if (from === -1 || to === -1 || from === to) return ids;
   const without = ids.filter((id) => id !== dragId);
-  const idx = without.indexOf(targetId);
-  if (idx === -1) return ids;
-  without.splice(idx, 0, dragId);
+  const targetIdx = without.indexOf(targetId);
+  // Moving forward drops after the target; moving back drops before it,
+  // so a single drag onto the neighbor moves exactly one position.
+  const insertAt = from < to ? targetIdx + 1 : targetIdx;
+  without.splice(insertAt, 0, dragId);
   return without;
 }
 
