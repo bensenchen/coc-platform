@@ -1,4 +1,4 @@
-import { Group, Rect, Ellipse, Line, Text } from 'react-konva';
+import { Group, Rect, Ellipse, Line, Text, Shape } from 'react-konva';
 import type { ShapeKind } from '@/models/canvas-object.model';
 
 const FILL = '#f8fafc';
@@ -122,11 +122,53 @@ export function ShapeNode({
 
     case 'cylinder': {
       const ry = Math.min(height * 0.15, 16);
+      const cxx = width / 2;
+      const by = height - ry;
       return (
         <Group {...commonGroup}>
-          <Rect x={0} y={ry} width={width} height={height - ry} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
-          <Ellipse x={width / 2} y={ry} radiusX={width / 2} radiusY={ry} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
-          <Ellipse x={width / 2} y={height} radiusX={width / 2} radiusY={ry} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
+          <Shape
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            sceneFunc={(ctx: any) => {
+              // Body + front (visible) bottom arc as a single filled silhouette.
+              // The back half of the bottom rim is intentionally omitted.
+              ctx.fillStyle = fill;
+              ctx.strokeStyle = stroke;
+              ctx.lineWidth = strokeWidth;
+              ctx.beginPath();
+              ctx.moveTo(0, ry);
+              ctx.lineTo(0, by);
+              for (let i = 0; i <= 28; i++) {
+                const a = Math.PI - Math.PI * (i / 28); // left → bottom → right
+                ctx.lineTo(cxx + cxx * Math.cos(a), by + ry * Math.sin(a));
+              }
+              ctx.lineTo(width, ry);
+              ctx.closePath();
+              ctx.fill();
+              // Stroke sides + front bottom arc only (skip the interior closing line)
+              ctx.beginPath();
+              ctx.moveTo(0, ry);
+              ctx.lineTo(0, by);
+              for (let i = 0; i <= 28; i++) {
+                const a = Math.PI - Math.PI * (i / 28);
+                ctx.lineTo(cxx + cxx * Math.cos(a), by + ry * Math.sin(a));
+              }
+              ctx.lineTo(width, ry);
+              ctx.stroke();
+              // Top rim ellipse (the visible cap)
+              ctx.beginPath();
+              for (let i = 0; i <= 48; i++) {
+                const a = 2 * Math.PI * (i / 48);
+                const px = cxx + cxx * Math.cos(a);
+                const py = ry + ry * Math.sin(a);
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+              }
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+            }}
+          />
           {name && <Label x={0} y={ry} width={width} height={height - ry} text={name} fontSize={fontSize} />}
         </Group>
       );
