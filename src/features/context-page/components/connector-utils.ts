@@ -35,6 +35,28 @@ export function curvedPoints(
   return [sx, sy, sx + snx * d, sy + sny * d, tx + tnx * d, ty + tny * d, tx, ty];
 }
 
+// Orthogonal elbow whose ends leave/enter along the edge normals.
+// Each end gets a short straight stub in the normal direction so the
+// connector meets the shape perpendicular to its edge, then the two
+// stubs are joined with an axis-aligned Z.
+export function elbowPoints(
+  sx: number, sy: number, snx: number, sny: number,
+  tx: number, ty: number, tnx: number, tny: number,
+): number[] {
+  const stub = 20;
+  const spx = sx + snx * stub;
+  const spy = sy + sny * stub;
+  const tpx = tx + tnx * stub;
+  const tpy = ty + tny * stub;
+  const horiz = Math.abs(snx) >= Math.abs(sny); // source leaves horizontally?
+  if (horiz) {
+    const mx = (spx + tpx) / 2;
+    return [sx, sy, spx, spy, mx, spy, mx, tpy, tpx, tpy, tx, ty];
+  }
+  const my = (spy + tpy) / 2;
+  return [sx, sy, spx, spy, spx, my, tpx, my, tpx, tpy, tx, ty];
+}
+
 export function pathPoints(
   kind: ConnectorKind,
   sx: number,
