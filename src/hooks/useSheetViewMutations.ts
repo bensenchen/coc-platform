@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { createColumn, deleteColumn, createRow, deleteRow, upsertCell } from '@/services/sheet.service';
+import { createColumn, updateColumn, deleteColumn, createRow, deleteRow, upsertCell } from '@/services/sheet.service';
 import { updatePageMeta } from '@/services/page.service';
 import type { Page } from '@/models/page.model';
 
@@ -26,6 +26,25 @@ export function useUpdateColumnOrder(sheetPage: Page) {
     mutationFn: (columnOrder: string[]) =>
       updatePageMeta(sheetPage.id, { ...sheetPage.metadata, columnOrder }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pages', sheetPage.projectId] }),
+  });
+}
+
+export function useUpdateRowOrder(sheetPage: Page) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rowOrder: string[]) =>
+      updatePageMeta(sheetPage.id, { ...sheetPage.metadata, rowOrder }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pages', sheetPage.projectId] }),
+  });
+}
+
+// Renames a column — works for both data page columns and mgmt columns,
+// since a data column rename writes through to the source page.
+export function useRenameSheetColumn(sheetPageId: string, linkedDataPageId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => updateColumn(id, { name }),
+    onSuccess: () => inv(qc, sheetPageId, linkedDataPageId),
   });
 }
 
