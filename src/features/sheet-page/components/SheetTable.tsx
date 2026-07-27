@@ -3,6 +3,8 @@ import { useSheetView, useProjectDataPages } from '@/hooks/useSheetView';
 import {
   useLinkDataPage,
   useUpdateColumnOrder,
+  useUpdateRowOrder,
+  useRenameSheetColumn,
   useAddMgmtColumn,
   useDeleteMgmtColumn,
   useAddMgmtRow,
@@ -20,23 +22,46 @@ interface Props {
 type MergedCol = SheetColumn & { isMgmt: boolean };
 type MergedRow = SheetRow & { isMgmt: boolean };
 
-const TYPE_BADGE: Record<string, string> = {
-  text: 'bg-slate-100 text-slate-600',
-  number: 'bg-blue-100 text-blue-700',
-  boolean: 'bg-purple-100 text-purple-700',
-  date: 'bg-green-100 text-green-700',
-  link: 'bg-orange-100 text-orange-700',
-};
+// Apply a saved order to items; anything NOT in the saved order (e.g. a
+// column added later on the data page) is appended at the end so it is
+// never hidden.
+function applyOrder<T extends { id: string }>(items: T[], order: string[] | null): T[] {
+  if (!order) return items;
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const ordered: T[] = [];
+  for (const id of order) {
+    const it = byId.get(id);
+    if (it) {
+      ordered.push(it);
+      byId.delete(id);
+    }
+  }
+  return [...ordered, ...byId.values()];
+}
+
+function moveId(ids: string[], dragId: string, targetId: string): string[] {
+  const from = ids.indexOf(dragId);
+  const to = ids.indexOf(targetId);
+  if (from === -1 || to === -1 || from === to) return ids;
+  const without = ids.filter((id) => id !== dragId);
+  const targetIdx = without.indexOf(targetId);
+  const insertAt = from < to ? targetIdx + 1 : targetIdx;
+  without.splice(insertAt, 0, dragId);
+  return without;
+}
 
 export function SheetTable({ sheetPage, projectId }: Props) {
   const linkedDataPageId = (sheetPage.metadata.linkedDataPageId as string | undefined) ?? null;
   const columnOrder = (sheetPage.metadata.columnOrder as string[] | undefined) ?? null;
+  const rowOrder = (sheetPage.metadata.rowOrder as string[] | undefined) ?? null;
 
   const { data, isLoading } = useSheetView(sheetPage.id, linkedDataPageId);
   const { data: dataPages = [] } = useProjectDataPages(projectId);
 
   const linkDataPage = useLinkDataPage(sheetPage);
   const updateColOrder = useUpdateColumnOrder(sheetPage);
+  const updateRowOrder = useUpdateRowOrder(sheetPage);
+  const renameCol = useRenameSheetColumn(sheetPage.id, linkedDataPageId);
   const addMgmtCol = useAddMgmtColumn(sheetPage.id, linkedDataPageId);
   const deleteMgmtCol = useDeleteMgmtColumn(sheetPage.id, linkedDataPageId);
   const addMgmtRow = useAddMgmtRow(sheetPage.id, linkedDataPageId);
@@ -45,8 +70,14 @@ export function SheetTable({ sheetPage, projectId }: Props) {
 
   const [editingCell, setEditingCell] = useState<{ rowId: string; colId: string } | null>(null);
   const [cellDraft, setCellDraft] = useState('');
+  const [editingColId, setEditingColId] = useState<string | null>(null);
+  const [colDraft, setColDraft] = useState('');
   const [newColName, setNewColName] = useState('');
   const [addingCol, setAddingCol] = useState(false);
+  const [dragColId, setDragColId] = useState<string | null>(null);
+  const [overColId, setOverColId] = useState<string | null>(null);
+  const [dragRowId, setDragRowId] = useState<string | null>(null);
+  const [overRowId, setOverRowId] = useState<string | null>(null);
 
   if (isLoading) {
     return <div className="flex items-center justify-center h-full text-slate-400">Loading…</div>;
@@ -64,7 +95,7 @@ export function SheetTable({ sheetPage, projectId }: Props) {
           <p className="text-xs text-slate-400">No Data Pages found in this project. Create one first.</p>
         ) : (
           <select
-            className="border border-slate-300 rounded px-3 py-2 text-sm min-w-[220px]"
+            className="border border-slate-300 rounded px-3 py-2 text-sm min-w-[220px] text-slate-900 bg-white"
             defaultValue=""
             onChange={(e) => { if (e.target.value) linkDataPage.mutate(e.target.value); }}
           >
@@ -78,6 +109,8 @@ export function SheetTable({ sheetPage, projectId }: Props) {
     );
   }
 
+  const linkedDataPageTitle = dataPages.find((p) => p.id === linkedDataPageId)?.title ?? 'data';
+
   const dataPageColumns = data?.dataPageColumns ?? [];
   const mgmtColumns = data?.mgmtColumns ?? [];
   const dataPageRows = data?.dataPageRows ?? [];
@@ -88,15 +121,13 @@ export function SheetTable({ sheetPage, projectId }: Props) {
     ...dataPageColumns.map((c) => ({ ...c, isMgmt: false })),
     ...mgmtColumns.map((c) => ({ ...c, isMgmt: true })),
   ];
-
-  const orderedCols: MergedCol[] = columnOrder
-    ? (columnOrder.map((id) => allCols.find((c) => c.id === id)).filter(Boolean) as MergedCol[])
-    : allCols;
+  const orderedCols = applyOrder(allCols, columnOrder);
 
   const allRows: MergedRow[] = [
     ...dataPageRows.map((r) => ({ ...r, isMgmt: false })),
     ...mgmtRows.map((r) => ({ ...r, isMgmt: true })),
   ];
+  const orderedRows = applyOrder(allRows, rowOrder);
 
   function startEdit(rowId: string, colId: string) {
     const val = cells[rowId]?.[colId];
@@ -110,16 +141,17 @@ export function SheetTable({ sheetPage, projectId }: Props) {
     setEditingCell(null);
   }
 
-  function moveCol(col: MergedCol, dir: -1 | 1) {
-  const ids = orderedCols.map((c) => c.id);
-  const idx = ids.indexOf(col.id);
-  const next = idx + dir;
-  if (next < 0 || next >= ids.length) return;
-  const tmp = ids[idx]!;
-  ids[idx] = ids[next]!;
-  ids[next] = tmp;
-  updateColOrder.mutate(ids);
-}
+  function startColEdit(col: MergedCol) {
+    setColDraft(col.name);
+    setEditingColId(col.id);
+  }
+
+  function commitColEdit(col: MergedCol) {
+    if (colDraft.trim() && colDraft !== col.name) {
+      renameCol.mutate({ id: col.id, name: colDraft.trim() });
+    }
+    setEditingColId(null);
+  }
 
   function handleAddCol() {
     if (!newColName.trim()) return;
@@ -128,13 +160,31 @@ export function SheetTable({ sheetPage, projectId }: Props) {
     setAddingCol(false);
   }
 
+  // Reordering only touches this sheet page's metadata — the data page
+  // keeps its own order.
+  function handleColDrop(targetId: string) {
+    if (dragColId && dragColId !== targetId) {
+      updateColOrder.mutate(moveId(orderedCols.map((c) => c.id), dragColId, targetId));
+    }
+    setDragColId(null);
+    setOverColId(null);
+  }
+
+  function handleRowDrop(targetId: string) {
+    if (dragRowId && dragRowId !== targetId) {
+      updateRowOrder.mutate(moveId(orderedRows.map((r) => r.id), dragRowId, targetId));
+    }
+    setDragRowId(null);
+    setOverRowId(null);
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-200 bg-white">
-        <span className="text-sm font-medium text-slate-700">Sheet / MGMT</span>
-        <span className="text-[11px] text-slate-400 bg-slate-100 rounded px-2 py-0.5">
-          linked to data
+        <span className="text-sm font-medium text-slate-700">Sheet</span>
+        <span className="text-[11px] text-slate-500 bg-slate-100 rounded px-2 py-0.5">
+          linked to {linkedDataPageTitle}
         </span>
         <div className="flex-1" />
         <button
@@ -145,7 +195,7 @@ export function SheetTable({ sheetPage, projectId }: Props) {
         </button>
         <button
           onClick={() => setAddingCol(true)}
-          className="px-3 py-1.5 text-xs font-medium rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
+          className="px-3 py-1.5 text-xs font-medium rounded border border-amber-300 text-amber-700 hover:bg-amber-50"
         >
           + MGMT Column
         </button>
@@ -162,7 +212,7 @@ export function SheetTable({ sheetPage, projectId }: Props) {
               if (e.key === 'Escape') setAddingCol(false);
             }}
             placeholder="Management column name…"
-            className="flex-1 text-sm border border-slate-300 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-amber-400"
+            className="flex-1 text-sm border border-slate-300 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-amber-400 text-slate-900"
           />
           <button onClick={handleAddCol} className="px-3 py-1 text-xs font-medium rounded bg-amber-600 text-white hover:bg-amber-700">Add</button>
           <button onClick={() => setAddingCol(false)} className="px-3 py-1 text-xs font-medium rounded border border-slate-300 text-slate-600 hover:bg-slate-100">Cancel</button>
@@ -174,35 +224,42 @@ export function SheetTable({ sheetPage, projectId }: Props) {
           <thead className="sticky top-0 z-10 bg-slate-50">
             <tr>
               <th className="w-8 px-2 py-2 border-b border-r border-slate-200 text-slate-400 font-normal text-xs">#</th>
-              {orderedCols.map((col, idx) => (
+              {orderedCols.map((col) => (
                 <th
                   key={col.id}
-                  className={`min-w-[140px] px-3 py-2 border-b border-r border-slate-200 text-left font-medium ${
+                  draggable
+                  onDragStart={() => setDragColId(col.id)}
+                  onDragOver={(e) => { e.preventDefault(); setOverColId(col.id); }}
+                  onDragLeave={() => setOverColId(null)}
+                  onDrop={() => handleColDrop(col.id)}
+                  onDragEnd={() => { setDragColId(null); setOverColId(null); }}
+                  className={`min-w-[140px] px-3 py-2 border-b border-r border-slate-200 text-left font-medium cursor-grab ${
                     col.isMgmt ? 'bg-amber-50' : ''
+                  } ${overColId === col.id && dragColId && dragColId !== col.id ? 'bg-indigo-50' : ''} ${
+                    dragColId === col.id ? 'opacity-50' : ''
                   }`}
                 >
-                  <div className="flex items-center gap-1 group">
-                    <button
-                      onClick={() => moveCol(col, -1)}
-                      disabled={idx === 0}
-                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-700 disabled:opacity-20 text-xs leading-none"
-                      title="Move left"
-                    >←</button>
-                    <span className={`flex-1 text-sm ${col.isMgmt ? 'text-amber-800' : 'text-slate-700'}`}>
-                      {col.name}
-                    </span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-normal ${TYPE_BADGE[col.dataType] ?? TYPE_BADGE.text}`}>
-                      {col.dataType}
-                    </span>
-                    {col.isMgmt && (
-                      <span className="text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-normal">mgmt</span>
+                  <div className="flex items-center gap-1.5 group">
+                    {editingColId === col.id ? (
+                      <input
+                        autoFocus
+                        value={colDraft}
+                        onChange={(e) => setColDraft(e.target.value)}
+                        onBlur={() => commitColEdit(col)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitColEdit(col);
+                          if (e.key === 'Escape') setEditingColId(null);
+                        }}
+                        className="flex-1 text-sm border border-indigo-400 rounded px-1 outline-none text-slate-900"
+                      />
+                    ) : (
+                      <span
+                        className={`flex-1 text-sm cursor-pointer hover:text-indigo-600 ${col.isMgmt ? 'text-amber-800' : 'text-slate-700'}`}
+                        onDoubleClick={() => startColEdit(col)}
+                      >
+                        {col.name}
+                      </span>
                     )}
-                    <button
-                      onClick={() => moveCol(col, 1)}
-                      disabled={idx === orderedCols.length - 1}
-                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-700 disabled:opacity-20 text-xs leading-none"
-                      title="Move right"
-                    >→</button>
                     {col.isMgmt && (
                       <button
                         onClick={() => deleteMgmtCol.mutate(col.id)}
@@ -217,19 +274,29 @@ export function SheetTable({ sheetPage, projectId }: Props) {
             </tr>
           </thead>
           <tbody>
-            {allRows.length === 0 && (
+            {orderedRows.length === 0 && (
               <tr>
                 <td colSpan={orderedCols.length + 2} className="py-12 text-center text-slate-400 text-sm">
                   No rows in the linked Data Page yet.
                 </td>
               </tr>
             )}
-            {allRows.map((row, idx) => (
+            {orderedRows.map((row, idx) => (
               <tr
                 key={row.id}
-                className={`hover:bg-slate-50 group/row ${row.isMgmt ? 'bg-amber-50/40' : ''}`}
+                onDragOver={(e) => { if (dragRowId) { e.preventDefault(); setOverRowId(row.id); } }}
+                onDrop={() => handleRowDrop(row.id)}
+                className={`hover:bg-slate-50 group/row ${row.isMgmt ? 'bg-amber-50/40' : ''} ${
+                  overRowId === row.id && dragRowId && dragRowId !== row.id ? 'bg-indigo-50' : ''
+                } ${dragRowId === row.id ? 'opacity-50' : ''}`}
               >
-                <td className="px-2 py-1.5 border-b border-r border-slate-100 text-slate-400 text-xs text-center">
+                <td
+                  draggable
+                  onDragStart={() => setDragRowId(row.id)}
+                  onDragEnd={() => { setDragRowId(null); setOverRowId(null); }}
+                  className="px-2 py-1.5 border-b border-r border-slate-100 text-slate-400 text-xs text-center cursor-grab"
+                  title="Drag to reorder"
+                >
                   {idx + 1}
                 </td>
                 {orderedCols.map((col) => {
@@ -251,7 +318,7 @@ export function SheetTable({ sheetPage, projectId }: Props) {
                             if (e.key === 'Enter') commitEdit();
                             if (e.key === 'Escape') setEditingCell(null);
                           }}
-                          className="w-full outline-none border border-indigo-400 rounded px-1 text-sm"
+                          className="w-full outline-none border border-indigo-400 rounded px-1 text-sm text-slate-900"
                         />
                       ) : (
                         <span className={val == null ? 'text-slate-300 text-xs italic' : 'text-slate-700'}>
