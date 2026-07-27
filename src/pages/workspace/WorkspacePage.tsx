@@ -14,9 +14,9 @@ const KIND_LABEL: Record<PageKind, string> = {
   context: 'Context Page',
   data: 'Data Page',
   data_view: 'Data View',
-  interface_list: 'List of Interfaces',
+  interface_list: 'INTERFACE PAGE',
   icd: 'ICD Page',
-  sheet: 'Sheet / MGMT Page',
+  sheet: 'MGMT PAGE',
 };
 
 function nextPhase(kind: PageKind): number {
