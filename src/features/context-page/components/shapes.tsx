@@ -168,6 +168,15 @@ export function ShapeNode({
               ctx.fill();
               ctx.stroke();
             }}
+            hitFunc={(ctx: any, shape: any) => {
+              // Manual fill/stroke doesn't populate Konva's hit graph, so
+              // give the cylinder a plain rectangular hit region — otherwise
+              // it can't be clicked/selected.
+              ctx.beginPath();
+              ctx.rect(0, 0, width, height);
+              ctx.closePath();
+              ctx.fillStrokeShape(shape);
+            }}
           />
           {name && <Label x={0} y={ry} width={width} height={height - ry} text={name} fontSize={fontSize} />}
         </Group>
