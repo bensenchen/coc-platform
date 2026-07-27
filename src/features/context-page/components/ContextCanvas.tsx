@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { Stage, Layer, Arrow, Line, Rect, Circle, Group, Text, Label, Tag } from 'react-konva';
 import { useCanvasObjects } from '@/hooks/useCanvasObjects';
 import {
@@ -63,7 +63,7 @@ function unitTowards(fromX: number, fromY: number, toX: number, toY: number): [n
 }
 
 export function ContextCanvas({ pageId }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const roRef = useRef<ResizeObserver | null>(null);
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [drawPreview, setDrawPreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -96,16 +96,25 @@ export function ContextCanvas({ pageId }: Props) {
     setPan,
   } = useCanvasStore();
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
+  // Callback ref: measures the container whenever it actually mounts.
+  // A plain effect with the ref wouldn't work here because the container
+  // isn't in the DOM until the canvas data finishes loading, and the
+  // effect would run (and bail) before that.
+  const setContainer = useCallback((el: HTMLDivElement | null) => {
+    roRef.current?.disconnect();
+    if (!el) {
+      roRef.current = null;
+      return;
+    }
     const ro = new ResizeObserver(() => {
       setSize({ width: el.offsetWidth, height: el.offsetHeight });
     });
     ro.observe(el);
     setSize({ width: el.offsetWidth, height: el.offsetHeight });
-    return () => ro.disconnect();
+    roRef.current = ro;
   }, []);
+
+  useEffect(() => () => roRef.current?.disconnect(), []);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -434,7 +443,7 @@ export function ContextCanvas({ pageId }: Props) {
     : null;
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-hidden bg-slate-100" style={{ cursor }}>
+    <div ref={setContainer} className="flex-1 overflow-hidden bg-slate-100" style={{ cursor }}>
       <Stage
         width={size.width}
         height={size.height}
