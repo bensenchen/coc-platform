@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSheetView, useLinkablePages } from '@/hooks/useSheetView';
 import {
   useSetLinkedPage,
@@ -18,6 +18,18 @@ interface Props {
   sheetPage: Page;
   projectId: string;
 }
+
+// Per-cell formatting override, stored on this sheet page's metadata.
+type CellFmt = {
+  bg?: string;
+  color?: string;
+  bold?: boolean;
+  italic?: boolean;
+  align?: 'left' | 'center' | 'right';
+};
+type CellFmtMap = Record<string, Record<string, CellFmt>>;
+
+interface Cursor { r: number; c: number }
 
 // Apply a saved order to items; anything NOT in the saved order (e.g. a
 // column inherited later from a linked page) is appended so it is never
@@ -66,21 +78,10 @@ export function SheetTable({ sheetPage, projectId }: Props) {
   const upsertCell = useUpsertSheetCell();
   const updateFormat = useUpdateViewFormat(sheetPage);
 
-  // Per-view background colors, keyed by column / row id, stored in this
-  // page's metadata (local to this view — never touches the source).
+  // Per-view formatting, stored in this page's metadata (local to this view).
   const colBg = (sheetPage.metadata.colBg as Record<string, string> | undefined) ?? {};
   const rowBg = (sheetPage.metadata.rowBg as Record<string, string> | undefined) ?? {};
-
-  function setColBg(id: string, color: string | null) {
-    const next = { ...colBg };
-    if (color) next[id] = color; else delete next[id];
-    updateFormat.mutate({ colBg: next });
-  }
-  function setRowBg(id: string, color: string | null) {
-    const next = { ...rowBg };
-    if (color) next[id] = color; else delete next[id];
-    updateFormat.mutate({ rowBg: next });
-  }
+  const cellFmt = (sheetPage.metadata.cellFmt as CellFmtMap | undefined) ?? {};
 
   const [editingCell, setEditingCell] = useState<{ rowId: string; colId: string } | null>(null);
   const [cellDraft, setCellDraft] = useState('');
@@ -93,9 +94,10 @@ export function SheetTable({ sheetPage, projectId }: Props) {
   const [dragRowId, setDragRowId] = useState<string | null>(null);
   const [overRowId, setOverRowId] = useState<string | null>(null);
 
-  if (isLoading) {
-    return <div className="flex items-center justify-center h-full text-slate-400">Loading…</div>;
-  }
+  // --- Range selection state (by row/column index into the ordered arrays) ---
+  const [selAnchor, setSelAnchor] = useState<Cursor | null>(null);
+  const [selFocus, setSelFocus] = useState<Cursor | null>(null);
+  const [selecting, setSelecting] = useState(false);
 
   const columns = applyOrder(data?.columns ?? [], columnOrder);
   const rows = applyOrder(data?.rows ?? [], rowOrder);
@@ -104,6 +106,114 @@ export function SheetTable({ sheetPage, projectId }: Props) {
   const isOwnCol = (pageId: string) => pageId === sheetPage.id;
   const isOwnRow = (pageId: string) => pageId === sheetPage.id;
   const linkedTitle = linkable.find((p) => p.id === linkedId)?.title ?? null;
+
+  const selRect = selAnchor && selFocus
+    ? {
+        r1: Math.min(selAnchor.r, selFocus.r),
+        r2: Math.max(selAnchor.r, selFocus.r),
+        c1: Math.min(selAnchor.c, selFocus.c),
+        c2: Math.max(selAnchor.c, selFocus.c),
+      }
+    : null;
+
+  const inSel = (r: number, c: number) =>
+    !!selRect && r >= selRect.r1 && r <= selRect.r2 && c >= selRect.c1 && c <= selRect.c2;
+
+  function fmtOf(rowId: string, colId: string): CellFmt {
+    return cellFmt[rowId]?.[colId] ?? {};
+  }
+
+  function selectedCoords(): { rowId: string; colId: string }[] {
+    if (!selRect) return [];
+    const out: { rowId: string; colId: string }[] = [];
+    for (let r = selRect.r1; r <= selRect.r2; r++) {
+      for (let c = selRect.c1; c <= selRect.c2; c++) {
+        const row = rows[r];
+        const col = columns[c];
+        if (row && col) out.push({ rowId: row.id, colId: col.id });
+      }
+    }
+    return out;
+  }
+
+  // Merge a mutation into every selected cell's format; prune empties.
+  function updateSelectionFmt(mut: (f: CellFmt) => CellFmt) {
+    const coords = selectedCoords();
+    if (!coords.length) return;
+    const next: CellFmtMap = {};
+    for (const rId of Object.keys(cellFmt)) next[rId] = { ...cellFmt[rId] };
+    for (const { rowId, colId } of coords) {
+      const updated = mut({ ...(next[rowId]?.[colId] ?? {}) });
+      if (!next[rowId]) next[rowId] = {};
+      if (!updated || Object.keys(updated).length === 0) delete next[rowId][colId];
+      else next[rowId][colId] = updated;
+    }
+    for (const rId of Object.keys(next)) {
+      const inner = next[rId];
+      if (!inner || Object.keys(inner).length === 0) delete next[rId];
+    }
+    updateFormat.mutate({ cellFmt: next });
+  }
+
+  function setSelBg(color: string | null) {
+    updateSelectionFmt((f) => { if (color) f.bg = color; else delete f.bg; return f; });
+  }
+  function setSelColor(color: string | null) {
+    updateSelectionFmt((f) => { if (color) f.color = color; else delete f.color; return f; });
+  }
+  function toggleBold() {
+    const coords = selectedCoords();
+    const all = coords.length > 0 && coords.every(({ rowId, colId }) => fmtOf(rowId, colId).bold);
+    updateSelectionFmt((f) => { if (all) delete f.bold; else f.bold = true; return f; });
+  }
+  function toggleItalic() {
+    const coords = selectedCoords();
+    const all = coords.length > 0 && coords.every(({ rowId, colId }) => fmtOf(rowId, colId).italic);
+    updateSelectionFmt((f) => { if (all) delete f.italic; else f.italic = true; return f; });
+  }
+  function setAlign(align: 'left' | 'center' | 'right') {
+    const coords = selectedCoords();
+    const all = coords.length > 0 && coords.every(({ rowId, colId }) => fmtOf(rowId, colId).align === align);
+    updateSelectionFmt((f) => { if (all) delete f.align; else f.align = align; return f; });
+  }
+  function clearSelFmt() {
+    updateSelectionFmt(() => ({}));
+  }
+
+  function clearSelection() {
+    setSelAnchor(null);
+    setSelFocus(null);
+  }
+
+  function cellMouseDown(r: number, c: number, e: React.MouseEvent) {
+    const row = rows[r];
+    const col = columns[c];
+    if (editingCell && row && col && editingCell.rowId === row.id && editingCell.colId === col.id) return;
+    e.preventDefault(); // don't start a native text selection
+    if (e.shiftKey && selAnchor) {
+      setSelFocus({ r, c });
+    } else {
+      setSelAnchor({ r, c });
+      setSelFocus({ r, c });
+    }
+    setSelecting(true);
+  }
+
+  function cellMouseEnter(r: number, c: number) {
+    if (selecting) setSelFocus({ r, c });
+  }
+
+  // Column-level background (points 1–3)
+  function setColBg(id: string, color: string | null) {
+    const next = { ...colBg };
+    if (color) next[id] = color; else delete next[id];
+    updateFormat.mutate({ colBg: next });
+  }
+  function setRowBg(id: string, color: string | null) {
+    const next = { ...rowBg };
+    if (color) next[id] = color; else delete next[id];
+    updateFormat.mutate({ rowBg: next });
+  }
 
   function startEdit(rowId: string, colId: string) {
     const val = cells[rowId]?.[colId];
@@ -154,6 +264,55 @@ export function SheetTable({ sheetPage, projectId }: Props) {
     setOverRowId(null);
   }
 
+  // End a drag-select on mouse release anywhere.
+  useEffect(() => {
+    const up = () => setSelecting(false);
+    window.addEventListener('mouseup', up);
+    return () => window.removeEventListener('mouseup', up);
+  }, []);
+
+  // Keyboard: Enter/F2 to edit the focus cell, Escape to clear, Cmd/Ctrl+B/I.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (!selAnchor || !selFocus) return;
+      if (e.key === 'Escape') {
+        clearSelection();
+      } else if (e.key === 'Enter' || e.key === 'F2') {
+        const row = rows[selFocus.r];
+        const col = columns[selFocus.c];
+        if (row && col) startEdit(row.id, col.id);
+        e.preventDefault();
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === 'b' || e.key === 'B')) {
+        toggleBold();
+        e.preventDefault();
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === 'i' || e.key === 'I')) {
+        toggleItalic();
+        e.preventDefault();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-full text-slate-400">Loading…</div>;
+  }
+
+  // Format-toolbar state derived from the current selection
+  const selCoords = selectedCoords();
+  const focusFmt = selFocus ? fmtOf(rows[selFocus.r]?.id ?? '', columns[selFocus.c]?.id ?? '') : {};
+  const allBold = selCoords.length > 0 && selCoords.every(({ rowId, colId }) => fmtOf(rowId, colId).bold);
+  const allItalic = selCoords.length > 0 && selCoords.every(({ rowId, colId }) => fmtOf(rowId, colId).italic);
+  const alignActive = (a: string) =>
+    selCoords.length > 0 && selCoords.every(({ rowId, colId }) => fmtOf(rowId, colId).align === a);
+
+  const fmtBtn = (active: boolean) =>
+    `w-6 h-6 rounded text-xs font-semibold flex items-center justify-center ${
+      active ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'
+    }`;
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Toolbar */}
@@ -189,6 +348,56 @@ export function SheetTable({ sheetPage, projectId }: Props) {
           + Column
         </button>
       </div>
+
+      {/* Format toolbar — shown while a range is selected */}
+      {selRect && (
+        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-slate-200 bg-slate-50 text-xs select-none">
+          <span className="text-slate-500">
+            {selCoords.length} cell{selCoords.length > 1 ? 's' : ''}
+          </span>
+          <div className="w-px h-4 bg-slate-300" />
+
+          <label className="flex items-center gap-1 cursor-pointer" title="Fill color">
+            <span className="text-slate-500">Fill</span>
+            <input
+              type="color"
+              value={focusFmt.bg ?? '#ffffff'}
+              onChange={(e) => setSelBg(e.target.value)}
+              className="w-5 h-5 cursor-pointer border-0 bg-transparent p-0"
+            />
+          </label>
+          <button onClick={() => setSelBg(null)} className="text-slate-400 hover:text-slate-700" title="Clear fill">⊘</button>
+
+          <div className="w-px h-4 bg-slate-300" />
+
+          <label className="flex items-center gap-1 cursor-pointer" title="Text color">
+            <span className="text-slate-500">A</span>
+            <input
+              type="color"
+              value={focusFmt.color ?? '#1e293b'}
+              onChange={(e) => setSelColor(e.target.value)}
+              className="w-5 h-5 cursor-pointer border-0 bg-transparent p-0"
+            />
+          </label>
+          <button onClick={() => setSelColor(null)} className="text-slate-400 hover:text-slate-700" title="Clear text color">⊘</button>
+
+          <div className="w-px h-4 bg-slate-300" />
+
+          <button onClick={toggleBold} className={fmtBtn(allBold)} title="Bold (Ctrl/Cmd+B)"><span className="font-bold">B</span></button>
+          <button onClick={toggleItalic} className={fmtBtn(allItalic)} title="Italic (Ctrl/Cmd+I)"><span className="italic">I</span></button>
+
+          <div className="w-px h-4 bg-slate-300" />
+
+          <button onClick={() => setAlign('left')} className={fmtBtn(alignActive('left'))} title="Align left">⯇</button>
+          <button onClick={() => setAlign('center')} className={fmtBtn(alignActive('center'))} title="Align center">≡</button>
+          <button onClick={() => setAlign('right')} className={fmtBtn(alignActive('right'))} title="Align right">⯈</button>
+
+          <div className="w-px h-4 bg-slate-300" />
+
+          <button onClick={clearSelFmt} className="text-slate-500 hover:text-red-500" title="Clear formatting">Clear</button>
+          <button onClick={clearSelection} className="ml-auto text-slate-400 hover:text-slate-700" title="Deselect">✕</button>
+        </div>
+      )}
 
       {addingCol && (
         <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200">
@@ -300,7 +509,7 @@ export function SheetTable({ sheetPage, projectId }: Props) {
                   </td>
                 </tr>
               )}
-              {rows.map((row, idx) => {
+              {rows.map((row, rIdx) => {
                 const ownRow = isOwnRow(row.pageId);
                 const dragOverRow = overRowId === row.id && dragRowId && dragRowId !== row.id;
                 const rowColor = rowBg[row.id] || (ownRow ? '#fde68a' : undefined);
@@ -322,7 +531,7 @@ export function SheetTable({ sheetPage, projectId }: Props) {
                       title="Drag to reorder"
                     >
                       <div className="flex items-center justify-center gap-1 group/rn">
-                        <span>{idx + 1}</span>
+                        <span>{rIdx + 1}</span>
                         <input
                           type="color"
                           value={rowBg[row.id] ?? '#ffffff'}
@@ -342,16 +551,27 @@ export function SheetTable({ sheetPage, projectId }: Props) {
                         )}
                       </div>
                     </td>
-                    {columns.map((col) => {
+                    {columns.map((col, cIdx) => {
                       const isEditing = editingCell?.rowId === row.id && editingCell?.colId === col.id;
                       const val = cells[row.id]?.[col.id];
-                      const cellColor = colBg[col.id] || rowBg[row.id] || (ownRow ? '#fde68a' : undefined);
+                      const f = fmtOf(row.id, col.id);
+                      const selected = inSel(rIdx, cIdx);
+                      const bg = f.bg || colBg[col.id] || rowBg[row.id] || (ownRow ? '#fde68a' : undefined);
                       return (
                         <td
                           key={col.id}
-                          style={cellColor ? { backgroundColor: cellColor } : undefined}
-                          className="px-3 py-1.5 border-b border-r border-slate-100 cursor-text"
-                          onClick={() => startEdit(row.id, col.id)}
+                          style={{
+                            backgroundColor: bg,
+                            color: f.color,
+                            fontWeight: f.bold ? 600 : undefined,
+                            fontStyle: f.italic ? 'italic' : undefined,
+                            textAlign: f.align,
+                            boxShadow: selected ? 'inset 0 0 0 2px #6366f1' : undefined,
+                          }}
+                          className="px-3 py-1.5 border-b border-r border-slate-100 cursor-cell select-none"
+                          onMouseDown={(e) => cellMouseDown(rIdx, cIdx, e)}
+                          onMouseEnter={() => cellMouseEnter(rIdx, cIdx)}
+                          onDoubleClick={() => startEdit(row.id, col.id)}
                         >
                           {isEditing ? (
                             <input
@@ -366,7 +586,7 @@ export function SheetTable({ sheetPage, projectId }: Props) {
                               className="w-full outline-none border border-indigo-400 rounded px-1 text-sm text-slate-900"
                             />
                           ) : (
-                            <span className={val == null ? 'text-slate-300 text-xs italic' : 'text-slate-700'}>
+                            <span className={val == null ? 'text-slate-300 text-xs italic' : ''}>
                               {val == null ? 'empty' : String(val)}
                             </span>
                           )}
