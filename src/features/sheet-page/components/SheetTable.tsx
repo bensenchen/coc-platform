@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSheetView, useLinkablePages } from '@/hooks/useSheetView';
 import {
   useSetLinkedPage,
@@ -30,6 +30,8 @@ type CellFmt = {
 type CellFmtMap = Record<string, Record<string, CellFmt>>;
 
 interface Cursor { r: number; c: number }
+interface ClipCell { value: unknown; fmt: CellFmt }
+interface Clip { tsv: string; grid: ClipCell[][] }
 
 // Apply a saved order to items; anything NOT in the saved order (e.g. a
 // column inherited later from a linked page) is appended so it is never
@@ -57,6 +59,13 @@ function moveId(ids: string[], dragId: string, targetId: string): string[] {
   const insertAt = from < to ? targetIdx + 1 : targetIdx;
   without.splice(insertAt, 0, dragId);
   return without;
+}
+
+// Parse pasted TSV (from this app or an external spreadsheet) into a grid.
+function tsvToGrid(text: string): ClipCell[][] {
+  const lines = text.replace(/\r/g, '').split('\n');
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  return lines.map((line) => line.split('\t').map((v) => ({ value: v, fmt: {} })));
 }
 
 export function SheetTable({ sheetPage, projectId }: Props) {
@@ -98,6 +107,7 @@ export function SheetTable({ sheetPage, projectId }: Props) {
   const [selAnchor, setSelAnchor] = useState<Cursor | null>(null);
   const [selFocus, setSelFocus] = useState<Cursor | null>(null);
   const [selecting, setSelecting] = useState(false);
+  const clipRef = useRef<Clip | null>(null);
 
   const columns = applyOrder(data?.columns ?? [], columnOrder);
   const rows = applyOrder(data?.rows ?? [], rowOrder);
@@ -118,6 +128,11 @@ export function SheetTable({ sheetPage, projectId }: Props) {
 
   const inSel = (r: number, c: number) =>
     !!selRect && r >= selRect.r1 && r <= selRect.r2 && c >= selRect.c1 && c <= selRect.c2;
+
+  const colFullySelected = (c: number) =>
+    !!selRect && rows.length > 0 && c >= selRect.c1 && c <= selRect.c2 && selRect.r1 <= 0 && selRect.r2 >= rows.length - 1;
+  const rowFullySelected = (r: number) =>
+    !!selRect && columns.length > 0 && r >= selRect.r1 && r <= selRect.r2 && selRect.c1 <= 0 && selRect.c2 >= columns.length - 1;
 
   function fmtOf(rowId: string, colId: string): CellFmt {
     return cellFmt[rowId]?.[colId] ?? {};
@@ -203,6 +218,95 @@ export function SheetTable({ sheetPage, projectId }: Props) {
     if (selecting) setSelFocus({ r, c });
   }
 
+  // Stage B — whole column / whole row selection
+  function selectColumn(c: number, shift: boolean) {
+    const last = Math.max(0, rows.length - 1);
+    if (shift && selAnchor) {
+      setSelAnchor({ r: 0, c: selAnchor.c });
+      setSelFocus({ r: last, c });
+    } else {
+      setSelAnchor({ r: 0, c });
+      setSelFocus({ r: last, c });
+    }
+  }
+  function selectRow(r: number, shift: boolean) {
+    const last = Math.max(0, columns.length - 1);
+    if (shift && selAnchor) {
+      setSelAnchor({ r: selAnchor.r, c: 0 });
+      setSelFocus({ r, c: last });
+    } else {
+      setSelAnchor({ r, c: 0 });
+      setSelFocus({ r, c: last });
+    }
+  }
+
+  // Stage C — copy / paste
+  function buildCopy(): Clip | null {
+    if (!selRect) return null;
+    const grid: ClipCell[][] = [];
+    const tsvRows: string[] = [];
+    for (let r = selRect.r1; r <= selRect.r2; r++) {
+      const rowArr: ClipCell[] = [];
+      const tsvCells: string[] = [];
+      for (let c = selRect.c1; c <= selRect.c2; c++) {
+        const row = rows[r];
+        const col = columns[c];
+        const value = row && col ? cells[row.id]?.[col.id] : undefined;
+        const fmt = row && col ? { ...fmtOf(row.id, col.id) } : {};
+        rowArr.push({ value: value ?? '', fmt });
+        tsvCells.push(value == null ? '' : String(value));
+      }
+      grid.push(rowArr);
+      tsvRows.push(tsvCells.join('\t'));
+    }
+    return { grid, tsv: tsvRows.join('\n') };
+  }
+
+  async function handleCopy() {
+    const payload = buildCopy();
+    if (!payload) return;
+    clipRef.current = payload;
+    try { await navigator.clipboard.writeText(payload.tsv); } catch { /* ignore */ }
+  }
+
+  function pasteGrid(grid: ClipCell[][]) {
+    if (!selRect || grid.length === 0) return;
+    const r0 = selRect.r1;
+    const c0 = selRect.c1;
+    const next: CellFmtMap = {};
+    for (const rId of Object.keys(cellFmt)) next[rId] = { ...cellFmt[rId] };
+    grid.forEach((rowArr, i) => {
+      rowArr.forEach((cellData, j) => {
+        const row = rows[r0 + i];
+        const col = columns[c0 + j];
+        if (!row || !col) return;
+        upsertCell.mutate({ rowId: row.id, columnId: col.id, value: cellData.value });
+        if (cellData.fmt && Object.keys(cellData.fmt).length > 0) {
+          const bucket = next[row.id] ?? (next[row.id] = {});
+          bucket[col.id] = { ...cellData.fmt };
+        }
+      });
+    });
+    updateFormat.mutate({ cellFmt: next });
+    const rr = Math.min(r0 + grid.length - 1, rows.length - 1);
+    const cc = Math.min(c0 + (grid[0]?.length ?? 1) - 1, columns.length - 1);
+    setSelAnchor({ r: r0, c: c0 });
+    setSelFocus({ r: rr, c: cc });
+  }
+
+  async function handlePaste() {
+    if (!selRect) return;
+    let grid: ClipCell[][] | null = null;
+    try {
+      const text = await navigator.clipboard.readText();
+      if (clipRef.current && text === clipRef.current.tsv) grid = clipRef.current.grid;
+      else if (text) grid = tsvToGrid(text);
+    } catch {
+      if (clipRef.current) grid = clipRef.current.grid;
+    }
+    if (grid) pasteGrid(grid);
+  }
+
   // Column-level background (points 1–3)
   function setColBg(id: string, color: string | null) {
     const next = { ...colBg };
@@ -271,24 +375,31 @@ export function SheetTable({ sheetPage, projectId }: Props) {
     return () => window.removeEventListener('mouseup', up);
   }, []);
 
-  // Keyboard: Enter/F2 to edit the focus cell, Escape to clear, Cmd/Ctrl+B/I.
+  // Keyboard: Enter/F2 edit, Escape clear, Cmd/Ctrl+B/I format, Cmd/Ctrl+C/V.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
       if (!selAnchor || !selFocus) return;
+      const mod = e.metaKey || e.ctrlKey;
       if (e.key === 'Escape') {
         clearSelection();
+      } else if (mod && (e.key === 'c' || e.key === 'C')) {
+        handleCopy();
+        e.preventDefault();
+      } else if (mod && (e.key === 'v' || e.key === 'V')) {
+        handlePaste();
+        e.preventDefault();
+      } else if (mod && (e.key === 'b' || e.key === 'B')) {
+        toggleBold();
+        e.preventDefault();
+      } else if (mod && (e.key === 'i' || e.key === 'I')) {
+        toggleItalic();
+        e.preventDefault();
       } else if (e.key === 'Enter' || e.key === 'F2') {
         const row = rows[selFocus.r];
         const col = columns[selFocus.c];
         if (row && col) startEdit(row.id, col.id);
-        e.preventDefault();
-      } else if ((e.metaKey || e.ctrlKey) && (e.key === 'b' || e.key === 'B')) {
-        toggleBold();
-        e.preventDefault();
-      } else if ((e.metaKey || e.ctrlKey) && (e.key === 'i' || e.key === 'I')) {
-        toggleItalic();
         e.preventDefault();
       }
     }
@@ -394,6 +505,11 @@ export function SheetTable({ sheetPage, projectId }: Props) {
 
           <div className="w-px h-4 bg-slate-300" />
 
+          <button onClick={handleCopy} className="text-slate-600 hover:bg-slate-200 rounded px-1.5 py-0.5" title="Copy (Ctrl/Cmd+C)">Copy</button>
+          <button onClick={handlePaste} className="text-slate-600 hover:bg-slate-200 rounded px-1.5 py-0.5" title="Paste (Ctrl/Cmd+V)">Paste</button>
+
+          <div className="w-px h-4 bg-slate-300" />
+
           <button onClick={clearSelFmt} className="text-slate-500 hover:text-red-500" title="Clear formatting">Clear</button>
           <button onClick={clearSelection} className="ml-auto text-slate-400 hover:text-slate-700" title="Deselect">✕</button>
         </div>
@@ -432,20 +548,25 @@ export function SheetTable({ sheetPage, projectId }: Props) {
             <thead className="sticky top-0 z-10 bg-slate-50">
               <tr>
                 <th className="w-8 px-2 py-2 border-b border-r border-slate-200 text-slate-400 font-normal text-xs">#</th>
-                {columns.map((col) => {
+                {columns.map((col, cIdx) => {
                   const own = isOwnCol(col.pageId);
                   const dragOver = overColId === col.id && dragColId && dragColId !== col.id;
                   const headerBg = dragOver ? '#eef2ff' : colBg[col.id] || (own ? '#fde68a' : undefined);
+                  const headerSel = colFullySelected(cIdx);
                   return (
                     <th
                       key={col.id}
                       draggable
+                      onClick={(e) => selectColumn(cIdx, e.shiftKey)}
                       onDragStart={() => setDragColId(col.id)}
                       onDragOver={(e) => { e.preventDefault(); setOverColId(col.id); }}
                       onDragLeave={() => setOverColId(null)}
                       onDrop={() => handleColDrop(col.id)}
                       onDragEnd={() => { setDragColId(null); setOverColId(null); }}
-                      style={headerBg ? { backgroundColor: headerBg } : undefined}
+                      style={{
+                        backgroundColor: headerBg,
+                        boxShadow: headerSel ? 'inset 0 0 0 2px #6366f1' : undefined,
+                      }}
                       className={`min-w-[140px] px-3 py-2 border-b border-r border-slate-200 text-left font-medium cursor-grab ${
                         dragColId === col.id ? 'opacity-50' : ''
                       }`}
@@ -466,7 +587,7 @@ export function SheetTable({ sheetPage, projectId }: Props) {
                         ) : (
                           <span
                             className={`flex-1 text-sm cursor-pointer hover:text-indigo-600 ${own ? 'text-amber-900' : 'text-slate-700'}`}
-                            onDoubleClick={() => startColEdit(col.id, col.name)}
+                            onDoubleClick={(e) => { e.stopPropagation(); startColEdit(col.id, col.name); }}
                           >
                             {col.name}
                           </span>
@@ -476,20 +597,21 @@ export function SheetTable({ sheetPage, projectId }: Props) {
                           value={colBg[col.id] ?? '#ffffff'}
                           onChange={(e) => setColBg(col.id, e.target.value)}
                           onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => e.stopPropagation()}
                           draggable={false}
                           title="Column background"
                           className="w-4 h-4 shrink-0 opacity-0 group-hover:opacity-100 cursor-pointer border-0 bg-transparent p-0"
                         />
                         {colBg[col.id] && (
                           <button
-                            onClick={() => setColBg(col.id, null)}
+                            onClick={(e) => { e.stopPropagation(); setColBg(col.id, null); }}
                             className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-700 text-[10px]"
                             title="Clear color"
                           >⊘</button>
                         )}
                         {own && (
                           <button
-                            onClick={() => deleteCol.mutate(col.id)}
+                            onClick={(e) => { e.stopPropagation(); deleteCol.mutate(col.id); }}
                             className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 text-xs ml-0.5"
                             title="Delete column"
                           >✕</button>
@@ -513,6 +635,7 @@ export function SheetTable({ sheetPage, projectId }: Props) {
                 const ownRow = isOwnRow(row.pageId);
                 const dragOverRow = overRowId === row.id && dragRowId && dragRowId !== row.id;
                 const rowColor = rowBg[row.id] || (ownRow ? '#fde68a' : undefined);
+                const rowSel = rowFullySelected(rIdx);
                 return (
                   <tr
                     key={row.id}
@@ -524,11 +647,15 @@ export function SheetTable({ sheetPage, projectId }: Props) {
                   >
                     <td
                       draggable
+                      onClick={(e) => selectRow(rIdx, e.shiftKey)}
                       onDragStart={() => setDragRowId(row.id)}
                       onDragEnd={() => { setDragRowId(null); setOverRowId(null); }}
-                      style={rowColor ? { backgroundColor: rowColor } : undefined}
+                      style={{
+                        backgroundColor: rowColor,
+                        boxShadow: rowSel ? 'inset 0 0 0 2px #6366f1' : undefined,
+                      }}
                       className="px-2 py-1.5 border-b border-r border-slate-100 text-slate-400 text-xs text-center cursor-grab"
-                      title="Drag to reorder"
+                      title="Click to select row · drag to reorder"
                     >
                       <div className="flex items-center justify-center gap-1 group/rn">
                         <span>{rIdx + 1}</span>
