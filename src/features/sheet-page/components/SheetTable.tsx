@@ -10,6 +10,7 @@ import {
   useAddRow,
   useDeleteRow,
   useUpsertSheetCell,
+  useUpdateViewFormat,
 } from '@/hooks/useSheetViewMutations';
 import type { Page } from '@/models/page.model';
 
@@ -63,6 +64,23 @@ export function SheetTable({ sheetPage, projectId }: Props) {
   const addRow = useAddRow(sheetPage.id);
   const delRow = useDeleteRow();
   const upsertCell = useUpsertSheetCell();
+  const updateFormat = useUpdateViewFormat(sheetPage);
+
+  // Per-view background colors, keyed by column / row id, stored in this
+  // page's metadata (local to this view — never touches the source).
+  const colBg = (sheetPage.metadata.colBg as Record<string, string> | undefined) ?? {};
+  const rowBg = (sheetPage.metadata.rowBg as Record<string, string> | undefined) ?? {};
+
+  function setColBg(id: string, color: string | null) {
+    const next = { ...colBg };
+    if (color) next[id] = color; else delete next[id];
+    updateFormat.mutate({ colBg: next });
+  }
+  function setRowBg(id: string, color: string | null) {
+    const next = { ...rowBg };
+    if (color) next[id] = color; else delete next[id];
+    updateFormat.mutate({ rowBg: next });
+  }
 
   const [editingCell, setEditingCell] = useState<{ rowId: string; colId: string } | null>(null);
   const [cellDraft, setCellDraft] = useState('');
@@ -207,6 +225,8 @@ export function SheetTable({ sheetPage, projectId }: Props) {
                 <th className="w-8 px-2 py-2 border-b border-r border-slate-200 text-slate-400 font-normal text-xs">#</th>
                 {columns.map((col) => {
                   const own = isOwnCol(col.pageId);
+                  const dragOver = overColId === col.id && dragColId && dragColId !== col.id;
+                  const headerBg = dragOver ? '#eef2ff' : colBg[col.id] || (own ? '#fde68a' : undefined);
                   return (
                     <th
                       key={col.id}
@@ -216,9 +236,8 @@ export function SheetTable({ sheetPage, projectId }: Props) {
                       onDragLeave={() => setOverColId(null)}
                       onDrop={() => handleColDrop(col.id)}
                       onDragEnd={() => { setDragColId(null); setOverColId(null); }}
+                      style={headerBg ? { backgroundColor: headerBg } : undefined}
                       className={`min-w-[140px] px-3 py-2 border-b border-r border-slate-200 text-left font-medium cursor-grab ${
-                        own ? 'bg-amber-50' : ''
-                      } ${overColId === col.id && dragColId && dragColId !== col.id ? 'bg-indigo-50' : ''} ${
                         dragColId === col.id ? 'opacity-50' : ''
                       }`}
                     >
@@ -237,11 +256,27 @@ export function SheetTable({ sheetPage, projectId }: Props) {
                           />
                         ) : (
                           <span
-                            className={`flex-1 text-sm cursor-pointer hover:text-indigo-600 ${own ? 'text-amber-800' : 'text-slate-700'}`}
+                            className={`flex-1 text-sm cursor-pointer hover:text-indigo-600 ${own ? 'text-amber-900' : 'text-slate-700'}`}
                             onDoubleClick={() => startColEdit(col.id, col.name)}
                           >
                             {col.name}
                           </span>
+                        )}
+                        <input
+                          type="color"
+                          value={colBg[col.id] ?? '#ffffff'}
+                          onChange={(e) => setColBg(col.id, e.target.value)}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          draggable={false}
+                          title="Column background"
+                          className="w-4 h-4 shrink-0 opacity-0 group-hover:opacity-100 cursor-pointer border-0 bg-transparent p-0"
+                        />
+                        {colBg[col.id] && (
+                          <button
+                            onClick={() => setColBg(col.id, null)}
+                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-700 text-[10px]"
+                            title="Clear color"
+                          >⊘</button>
                         )}
                         {own && (
                           <button
@@ -267,30 +302,54 @@ export function SheetTable({ sheetPage, projectId }: Props) {
               )}
               {rows.map((row, idx) => {
                 const ownRow = isOwnRow(row.pageId);
+                const dragOverRow = overRowId === row.id && dragRowId && dragRowId !== row.id;
+                const rowColor = rowBg[row.id] || (ownRow ? '#fde68a' : undefined);
                 return (
                   <tr
                     key={row.id}
                     onDragOver={(e) => { if (dragRowId) { e.preventDefault(); setOverRowId(row.id); } }}
                     onDrop={() => handleRowDrop(row.id)}
-                    className={`hover:bg-slate-50 group/row ${ownRow ? 'bg-amber-50/40' : ''} ${
-                      overRowId === row.id && dragRowId && dragRowId !== row.id ? 'bg-indigo-50' : ''
+                    className={`group/row ${!ownRow ? 'hover:bg-slate-50' : ''} ${
+                      dragOverRow ? 'bg-indigo-50' : ''
                     } ${dragRowId === row.id ? 'opacity-50' : ''}`}
                   >
                     <td
                       draggable
                       onDragStart={() => setDragRowId(row.id)}
                       onDragEnd={() => { setDragRowId(null); setOverRowId(null); }}
+                      style={rowColor ? { backgroundColor: rowColor } : undefined}
                       className="px-2 py-1.5 border-b border-r border-slate-100 text-slate-400 text-xs text-center cursor-grab"
                       title="Drag to reorder"
                     >
-                      {idx + 1}
+                      <div className="flex items-center justify-center gap-1 group/rn">
+                        <span>{idx + 1}</span>
+                        <input
+                          type="color"
+                          value={rowBg[row.id] ?? '#ffffff'}
+                          onChange={(e) => setRowBg(row.id, e.target.value)}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => e.stopPropagation()}
+                          draggable={false}
+                          title="Row background"
+                          className="w-3 h-3 shrink-0 opacity-0 group-hover/rn:opacity-100 cursor-pointer border-0 bg-transparent p-0"
+                        />
+                        {rowBg[row.id] && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setRowBg(row.id, null); }}
+                            className="opacity-0 group-hover/rn:opacity-100 text-slate-400 hover:text-slate-700 text-[9px]"
+                            title="Clear color"
+                          >⊘</button>
+                        )}
+                      </div>
                     </td>
                     {columns.map((col) => {
                       const isEditing = editingCell?.rowId === row.id && editingCell?.colId === col.id;
                       const val = cells[row.id]?.[col.id];
+                      const cellColor = colBg[col.id] || rowBg[row.id] || (ownRow ? '#fde68a' : undefined);
                       return (
                         <td
                           key={col.id}
+                          style={cellColor ? { backgroundColor: cellColor } : undefined}
                           className="px-3 py-1.5 border-b border-r border-slate-100 cursor-text"
                           onClick={() => startEdit(row.id, col.id)}
                         >
@@ -314,7 +373,10 @@ export function SheetTable({ sheetPage, projectId }: Props) {
                         </td>
                       );
                     })}
-                    <td className="border-b border-slate-100 px-1 text-center">
+                    <td
+                      style={rowColor ? { backgroundColor: rowColor } : undefined}
+                      className="border-b border-slate-100 px-1 text-center"
+                    >
                       {ownRow && (
                         <button
                           onClick={() => delRow.mutate(row.id)}
