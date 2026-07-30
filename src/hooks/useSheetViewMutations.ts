@@ -48,6 +48,17 @@ export function useUpdateRowOrder(sheetPage: Page) {
   });
 }
 
+// Formatting (row/column background colors) is stored on THIS sheet page's
+// metadata, so it's local to this view and never touches the linked source.
+export function useUpdateViewFormat(sheetPage: Page) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Record<string, unknown>) =>
+      updatePageMeta(sheetPage.id, { ...sheetPage.metadata, ...patch }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pages', sheetPage.projectId] }),
+  });
+}
+
 // Renames a column — works for own or inherited columns; an inherited
 // rename writes through to wherever the column actually lives.
 export function useRenameColumn() {
