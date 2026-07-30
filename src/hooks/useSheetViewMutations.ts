@@ -3,19 +3,29 @@ import { createColumn, updateColumn, deleteColumn, createRow, deleteRow, upsertC
 import { updatePageMeta } from '@/services/page.service';
 import type { Page } from '@/models/page.model';
 
-function inv(qc: ReturnType<typeof useQueryClient>, sheetPageId: string, linkedDataPageId: string | null) {
-  qc.invalidateQueries({ queryKey: ['sheet-view', sheetPageId] });
-  if (linkedDataPageId) qc.invalidateQueries({ queryKey: ['sheet', linkedDataPageId] });
+// Broad invalidation: a cell/column/row change on any page can affect every
+// sheet view that links through it (and the source data table), so refresh
+// all of them. Cheap for this app's scale, and keeps linked views live.
+function invAll(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['sheet-view'] });
+  qc.invalidateQueries({ queryKey: ['sheet'] });
 }
 
-export function useLinkDataPage(sheetPage: Page) {
+// Set (or clear) which page this sheet page links to. Pass null for a
+// standalone sheet page.
+export function useSetLinkedPage(sheetPage: Page) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (dataPageId: string) =>
-      updatePageMeta(sheetPage.id, { ...sheetPage.metadata, linkedDataPageId: dataPageId }),
+    mutationFn: (linkedId: string | null) => {
+      const meta: Record<string, unknown> = { ...sheetPage.metadata };
+      if (linkedId) meta.linkedDataPageId = linkedId;
+      else delete meta.linkedDataPageId;
+      return updatePageMeta(sheetPage.id, meta);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pages', sheetPage.projectId] });
-      qc.invalidateQueries({ queryKey: ['sheet-view', sheetPage.id] });
+      qc.invalidateQueries({ queryKey: ['linkable-pages'] });
+      invAll(qc);
     },
   });
 }
@@ -38,53 +48,55 @@ export function useUpdateRowOrder(sheetPage: Page) {
   });
 }
 
-// Renames a column — works for both data page columns and mgmt columns,
-// since a data column rename writes through to the source page.
-export function useRenameSheetColumn(sheetPageId: string, linkedDataPageId: string | null) {
+// Renames a column — works for own or inherited columns; an inherited
+// rename writes through to wherever the column actually lives.
+export function useRenameColumn() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) => updateColumn(id, { name }),
-    onSuccess: () => inv(qc, sheetPageId, linkedDataPageId),
+    onSuccess: () => invAll(qc),
   });
 }
 
-export function useAddMgmtColumn(sheetPageId: string, linkedDataPageId: string | null) {
+// Adds a column that belongs to THIS sheet page.
+export function useAddColumn(sheetPageId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (name: string) => createColumn(sheetPageId, name),
-    onSuccess: () => inv(qc, sheetPageId, linkedDataPageId),
+    onSuccess: () => invAll(qc),
   });
 }
 
-export function useDeleteMgmtColumn(sheetPageId: string, linkedDataPageId: string | null) {
+export function useDeleteColumn() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteColumn(id),
-    onSuccess: () => inv(qc, sheetPageId, linkedDataPageId),
+    onSuccess: () => invAll(qc),
   });
 }
 
-export function useAddMgmtRow(sheetPageId: string, linkedDataPageId: string | null) {
+// Adds a row that belongs to THIS sheet page.
+export function useAddRow(sheetPageId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (canvasObjectId: string | undefined) => createRow(sheetPageId, canvasObjectId),
-    onSuccess: () => inv(qc, sheetPageId, linkedDataPageId),
+    mutationFn: (canvasObjectId?: string) => createRow(sheetPageId, canvasObjectId),
+    onSuccess: () => invAll(qc),
   });
 }
 
-export function useDeleteMgmtRow(sheetPageId: string, linkedDataPageId: string | null) {
+export function useDeleteRow() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteRow(id),
-    onSuccess: () => inv(qc, sheetPageId, linkedDataPageId),
+    onSuccess: () => invAll(qc),
   });
 }
 
-export function useUpsertSheetCell(sheetPageId: string, linkedDataPageId: string | null) {
+export function useUpsertSheetCell() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ rowId, columnId, value }: { rowId: string; columnId: string; value: unknown }) =>
       upsertCell(rowId, columnId, value),
-    onSuccess: () => inv(qc, sheetPageId, linkedDataPageId),
+    onSuccess: () => invAll(qc),
   });
 }
