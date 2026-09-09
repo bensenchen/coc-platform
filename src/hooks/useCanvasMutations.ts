@@ -11,6 +11,8 @@ import {
 } from '@/services/canvas-object.service';
 import type { ConnectorAnchor } from '@/models/canvas-object.model';
 import { linkPhysicalObjectToDataRow } from '@/services/physical-data-link.service';
+import type { CanvasData } from '@/hooks/useCanvasObjects';
+import { queryKeys } from '@/lib/query-keys';
 
 function invalidate(qc: ReturnType<typeof useQueryClient>, pageId: string) {
   qc.invalidateQueries({ queryKey: ['canvas', pageId] });
@@ -27,9 +29,20 @@ export function useCreateObject(pageId: string) {
 export function useUpdateObject(pageId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: UpdateObjectPatch }) =>
-      updateObject(id, patch),
-    onSuccess: () => invalidate(qc, pageId),
+    mutationFn: ({ id, patch }: { id: string; patch: UpdateObjectPatch }) => {
+      const object = qc.getQueryData<CanvasData>(queryKeys.canvas(pageId))?.objects.find((x) => x.id === id);
+      return updateObject(id, patch, object?.updatedAt);
+    },
+    onMutate: async ({ id, patch }) => {
+      await qc.cancelQueries({ queryKey: queryKeys.canvas(pageId) });
+      const previous = qc.getQueryData<CanvasData>(queryKeys.canvas(pageId));
+      qc.setQueryData<CanvasData>(queryKeys.canvas(pageId), (current) => current && ({
+        ...current, objects: current.objects.map((object) => object.id === id ? { ...object, ...patch } : object),
+      }));
+      return { previous };
+    },
+    onError: (_error, _variables, context) => qc.setQueryData(queryKeys.canvas(pageId), context?.previous),
+    onSettled: () => invalidate(qc, pageId),
   });
 }
 
@@ -37,7 +50,17 @@ export function useDeleteObject(pageId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteObject(id),
-    onSuccess: () => invalidate(qc, pageId),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: queryKeys.canvas(pageId) });
+      const previous = qc.getQueryData<CanvasData>(queryKeys.canvas(pageId));
+      qc.setQueryData<CanvasData>(queryKeys.canvas(pageId), (current) => current && ({
+        objects: current.objects.filter((object) => object.id !== id),
+        anchors: current.anchors.filter((anchor) => anchor.connectorId !== id),
+      }));
+      return { previous };
+    },
+    onError: (_error, _id, context) => qc.setQueryData(queryKeys.canvas(pageId), context?.previous),
+    onSettled: () => invalidate(qc, pageId),
   });
 }
 
