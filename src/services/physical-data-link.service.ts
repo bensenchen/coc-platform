@@ -60,6 +60,6 @@ export async function findPhysicalDataLink(
     .maybeSingle();
   if (error) throw error;
   return data
-    ? { canvasObjectId: data.canvas_object_id, sheetRowId: data.id, dataPageId: data.page_id }
+    ? { canvasObjectId: data.canvas_object_id!, sheetRowId: data.id, dataPageId: data.page_id }
     : null;
 }

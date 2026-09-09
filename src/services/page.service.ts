@@ -1,5 +1,6 @@
 import { supabase } from '@/infrastructure/supabase/client';
 import type { Page, PageKind } from '@/models/page.model';
+import type { Json } from '@/infrastructure/supabase/database.types';
 
 function mapPage(row: any): Page {
   return {
@@ -81,7 +82,7 @@ export async function updatePageMeta(
   metadata: Record<string, unknown>,
 ): Promise<Page> {
   const { data, error } = await supabase
-    .from('page').update({ metadata }).eq('id', id).select().single();
+    .from('page').update({ metadata: metadata as Json }).eq('id', id).select().single();
   if (error) throw error;
   return mapPage(data);
 }

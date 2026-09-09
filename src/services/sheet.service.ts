@@ -1,5 +1,6 @@
 import { supabase } from '@/infrastructure/supabase/client';
 import type { SheetColumn, SheetRow, SheetCell, ColumnDataType } from '@/models/sheet.model';
+import type { Json } from '@/infrastructure/supabase/database.types';
 
 function mapCol(r: any): SheetColumn {
   return { id: r.id, pageId: r.page_id, name: r.name, position: r.position, dataType: r.data_type, isDefault: r.is_default, format: r.format ?? {} };
@@ -90,6 +91,6 @@ export async function listCellsForPage(pageId: string): Promise<SheetCell[]> {
 }
 
 export async function upsertCell(rowId: string, columnId: string, value: unknown): Promise<void> {
-  const { error } = await supabase.from('sheet_cell').upsert({ row_id: rowId, column_id: columnId, value }, { onConflict: 'row_id,column_id' });
+  const { error } = await supabase.from('sheet_cell').upsert({ row_id: rowId, column_id: columnId, value: value as Json }, { onConflict: 'row_id,column_id' });
   if (error) throw error;
 }
