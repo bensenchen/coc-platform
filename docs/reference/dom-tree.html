@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>COC Platform DOM-tree export</title><style>body{margin:32px;background:#f8fafc;color:#0f172a;font:14px/1.5 ui-monospace,SFMono-Regular,monospace}h1{font-family:system-ui,sans-serif}pre{padding:24px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;overflow:auto}.tag{color:#4338ca}.note{color:#64748b}</style></head><body>
+<h1>COC Platform — reference DOM tree</h1><p class="note">Semantic export for the responsive application shell; attributes are intentionally abbreviated to stable test hooks and accessibility names.</p>
+<pre><span class="tag">#root</span>
+└─ router
+   ├─ <span class="tag">/login</span> → main[aria-label="Sign in"]
+   │  └─ section → form → email input · password input · submit · magic-link button · Google button
+   ├─ <span class="tag">/home</span> → div.home
+   │  ├─ header → button[aria-label="COC home"] · settings · account menu
+   │  └─ main → hero · workspace section → project section
+   └─ <span class="tag">/w/:workspaceSlug/p/:projectSlug[/page/:pageId]</span> → div.app-shell
+      ├─ aside → Home · workspace switcher · project switcher · nav
+      │  └─ sections: Context · Data · Interface · Mgmt → page rows + actions
+      ├─ separator[role="separator"]
+      └─ main
+         ├─ empty-project state, or
+         └─ article.page
+            ├─ header → page-kind label · h1
+            └─ page renderer
+               ├─ Context → toolbar · canvas · properties aside
+               ├─ Data → table toolbar · table
+               ├─ Interface List / ICD → planned renderer placeholder
+               └─ Mgmt → sheet toolbar · format toolbar · table</pre>
+</body></html>

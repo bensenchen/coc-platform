@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" role="img" aria-labelledby="title desc">
+  <title id="title">COC Platform logo</title>
+  <desc id="desc">Indigo rounded-square C mark followed by the COC Platform wordmark.</desc>
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#4f46e5"/><stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="64" height="64" rx="18" fill="url(#brand)"/>
+  <text x="32" y="42" text-anchor="middle" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="800">C</text>
+  <text x="80" y="30" fill="#0f172a" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700">COC Platform</text>
+  <text x="81" y="48" fill="#64748b" font-family="Inter, Arial, sans-serif" font-size="10" font-weight="700" letter-spacing="1.5">SYSTEMS ENGINEERING</text>
+</svg>
