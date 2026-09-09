@@ -1,5 +1,6 @@
 import { supabase } from '@/infrastructure/supabase/client';
 import type { CanvasObject, CanvasObjectType, ConnectorAnchor, AnchorPosition } from '@/models/canvas-object.model';
+import type { Database, Json } from '@/infrastructure/supabase/database.types';
 
 function mapObject(row: any): CanvasObject {
   return {
@@ -75,7 +76,7 @@ export async function createObject(pageId: string, props: CreateObjectProps): Pr
       width: props.width ?? null,
       height: props.height ?? null,
       name: props.name ?? null,
-      metadata: props.metadata ?? {},
+      metadata: (props.metadata ?? {}) as Json,
       created_by: user?.id ?? null,
     })
     .select()
@@ -97,7 +98,7 @@ export interface UpdateObjectPatch {
 }
 
 export async function updateObject(id: string, patch: UpdateObjectPatch): Promise<CanvasObject> {
-  const dbPatch: Record<string, unknown> = {};
+  const dbPatch: Database['public']['Tables']['canvas_object']['Update'] = {};
   if (patch.name !== undefined) dbPatch.name = patch.name;
   if (patch.positionX !== undefined) dbPatch.position_x = patch.positionX;
   if (patch.positionY !== undefined) dbPatch.position_y = patch.positionY;
@@ -106,7 +107,7 @@ export async function updateObject(id: string, patch: UpdateObjectPatch): Promis
   if (patch.rotation !== undefined) dbPatch.rotation = patch.rotation;
   if (patch.zIndex !== undefined) dbPatch.z_index = patch.zIndex;
   if (patch.isPhysical !== undefined) dbPatch.is_physical = patch.isPhysical;
-  if (patch.metadata !== undefined) dbPatch.metadata = patch.metadata;
+  if (patch.metadata !== undefined) dbPatch.metadata = patch.metadata as Json;
 
   const { data, error } = await supabase
     .from('canvas_object')
@@ -176,7 +177,7 @@ export async function updateConnectorAnchor(
   connectorId: string,
   patch: Partial<ConnectorAnchor>,
 ): Promise<ConnectorAnchor> {
-  const dbPatch: Record<string, unknown> = {};
+  const dbPatch: Database['public']['Tables']['connector_anchor']['Update'] = {};
   if (patch.sourceObjectId !== undefined) dbPatch.source_object_id = patch.sourceObjectId;
   if (patch.sourceAnchor !== undefined) dbPatch.source_anchor = patch.sourceAnchor;
   if (patch.targetObjectId !== undefined) dbPatch.target_object_id = patch.targetObjectId;

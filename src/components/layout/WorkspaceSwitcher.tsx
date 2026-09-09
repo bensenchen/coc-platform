@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useWorkspaceStore } from '@/stores/workspace.store';
-import { supabase } from '@/infrastructure/supabase/client';
+import { listProjects } from '@/services/domain-query.service';
 import { ChevronDown } from 'lucide-react';
 
 export function WorkspaceSwitcher() {
@@ -16,16 +16,9 @@ export function WorkspaceSwitcher() {
     setCurrentProject(null);
 
     // Jump to the first project of the new workspace
-    const { data } = await supabase
-      .from('project')
-      .select('slug')
-      .eq('workspace_id', w.id)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: true })
-      .limit(1);
-
-    if (data && data.length > 0) {
-      navigate(`/w/${w.slug}/p/${data[0]!.slug}`);
+    const projects = await listProjects(w.id);
+    if (projects.length > 0) {
+      navigate(`/w/${w.slug}/p/${projects[0]!.slug}`);
     } else {
       navigate('/home');
     }
