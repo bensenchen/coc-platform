@@ -9,6 +9,10 @@ import {
   reorderColumns,
   reorderRows,
 } from '@/services/sheet.service';
+import {
+  createDataRowWithPhysicalObject,
+  deleteDataRowRelationship,
+} from '@/services/physical-data-link.service';
 
 function inv(qc: ReturnType<typeof useQueryClient>, pageId: string) {
   qc.invalidateQueries({ queryKey: ['sheet', pageId] });
@@ -74,15 +78,39 @@ export function useReorderRows(pageId: string) {
 export function useUpsertCell(pageId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      rowId,
-      columnId,
-      value,
-    }: {
-      rowId: string;
-      columnId: string;
-      value: unknown;
-    }) => upsertCell(rowId, columnId, value),
+    mutationFn: ({ rowId, columnId, value }: { rowId: string; columnId: string; value: unknown }) =>
+      upsertCell(rowId, columnId, value),
     onSuccess: () => inv(qc, pageId),
+  });
+}
+
+export function useCreateLinkedPhysicalRow(pageId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      contextPageId?: string;
+      newContextTitle?: string;
+      objectName?: string;
+    }) => createDataRowWithPhysicalObject({ ...input, dataPageId: pageId }),
+    onSuccess: (result) => {
+      inv(qc, pageId);
+      qc.invalidateQueries({ queryKey: ['canvas', result.contextPageId] });
+      qc.invalidateQueries({ queryKey: ['pages'] });
+    },
+  });
+}
+
+export function useDeleteLinkedRow(pageId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rowId, deleteCanvasObject }: { rowId: string; deleteCanvasObject: boolean }) =>
+      deleteDataRowRelationship(rowId, deleteCanvasObject),
+    onSuccess: (result) => {
+      inv(qc, pageId);
+      if (result?.canvas_object_id) {
+        qc.invalidateQueries({ queryKey: ['canvas'] });
+        qc.invalidateQueries({ queryKey: ['physical-data-link', result.canvas_object_id] });
+      }
+    },
   });
 }

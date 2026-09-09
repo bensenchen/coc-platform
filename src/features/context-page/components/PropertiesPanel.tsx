@@ -1,32 +1,44 @@
 import { useState, useEffect } from 'react';
 import { useCanvasStore } from '@/stores/canvas.store';
-import { useUpdateObject, useDeleteObject } from '@/hooks/useCanvasMutations';
-import { useCanvasObjects } from '@/hooks/useCanvasObjects';
+import {
+  useUpdateObject,
+  useDeleteObject,
+  useLinkPhysicalObject,
+} from '@/hooks/useCanvasMutations';
+import { usePages } from '@/hooks/usePages';
+import { useCanvasObjects, usePhysicalDataLink } from '@/hooks/useCanvasObjects';
+import { useDeleteLinkedRow } from '@/hooks/useSheetMutations';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { resolveConnStyle } from './connector-utils';
 import type { ShapeKind } from '@/models/canvas-object.model';
 
 const SHAPE_KINDS: { kind: ShapeKind; label: string }[] = [
-  { kind: 'rect',     label: 'Rectangle' },
-  { kind: 'process',  label: 'Process'   },
-  { kind: 'ellipse',  label: 'Ellipse'   },
-  { kind: 'diamond',  label: 'Diamond'   },
-  { kind: 'triangle', label: 'Triangle'  },
-  { kind: 'cylinder', label: 'Cylinder'  },
+  { kind: 'rect', label: 'Rectangle' },
+  { kind: 'process', label: 'Process' },
+  { kind: 'ellipse', label: 'Ellipse' },
+  { kind: 'diamond', label: 'Diamond' },
+  { kind: 'triangle', label: 'Triangle' },
+  { kind: 'cylinder', label: 'Cylinder' },
 ];
 
 interface Props {
   pageId: string;
+  projectId: string | null;
 }
 
-export function PropertiesPanel({ pageId }: Props) {
+export function PropertiesPanel({ pageId, projectId }: Props) {
   const { selectedIds, clearSelection } = useCanvasStore();
   const { data } = useCanvasObjects(pageId);
+  const selectedId = selectedIds[0] ?? null;
+  const physicalLink = usePhysicalDataLink(selectedId);
+  const unlinkPhysical = useDeleteLinkedRow(physicalLink.data?.dataPageId ?? '');
   const updateObj = useUpdateObject(pageId);
   const deleteObj = useDeleteObject(pageId);
+  const linkPhysical = useLinkPhysicalObject(pageId);
+  const { data: pages = [] } = usePages(projectId);
+  const [dataPageId, setDataPageId] = useState('');
 
-  const selectedId = selectedIds[0] ?? null;
   const obj = data?.objects.find((o) => o.id === selectedId) ?? null;
 
   const [name, setName] = useState('');
@@ -59,9 +71,22 @@ export function PropertiesPanel({ pageId }: Props) {
     updateObj.mutate({ id: obj.id, patch: { metadata: { ...(obj.metadata as any), ...patch } } });
   }
 
+  const dataPages = pages.filter((page) => page.kind === 'data');
+
   function togglePhysical() {
     if (!obj) return;
-    updateObj.mutate({ id: obj.id, patch: { isPhysical: !obj.isPhysical } });
+    if (!obj.isPhysical) {
+      const target = dataPageId || dataPages[0]?.id;
+      if (!target) return;
+      linkPhysical.mutate({ objectId: obj.id, dataPageId: target });
+      return;
+    }
+    // Explicit unlink is coordinated through the database command when a row exists.
+    if (physicalLink.data) {
+      unlinkPhysical.mutate({ rowId: physicalLink.data.sheetRowId, deleteCanvasObject: false });
+    } else {
+      updateObj.mutate({ id: obj.id, patch: { isPhysical: false } });
+    }
   }
 
   function handleDelete() {
@@ -70,7 +95,8 @@ export function PropertiesPanel({ pageId }: Props) {
     clearSelection();
   }
 
-  const selectCls = 'w-full h-9 rounded-md border border-slate-300 text-xs px-2 text-slate-900 bg-white';
+  const selectCls =
+    'w-full h-9 rounded-md border border-slate-300 text-xs px-2 text-slate-900 bg-white';
 
   return (
     <div className="w-56 flex-shrink-0 bg-white border-l border-slate-200 p-4 overflow-y-auto">
@@ -84,7 +110,9 @@ export function PropertiesPanel({ pageId }: Props) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={commitName}
-          onKeyDown={(e) => { if (e.key === 'Enter') commitName(); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitName();
+          }}
           placeholder="Unnamed"
           className="text-xs"
         />
@@ -98,7 +126,9 @@ export function PropertiesPanel({ pageId }: Props) {
           className={selectCls}
         >
           {[8, 9, 10, 11, 12, 14, 16, 18, 20, 24].map((s) => (
-            <option key={s} value={s}>{s} px</option>
+            <option key={s} value={s}>
+              {s} px
+            </option>
           ))}
         </select>
       </label>
@@ -167,20 +197,57 @@ export function PropertiesPanel({ pageId }: Props) {
             className={selectCls}
           >
             {SHAPE_KINDS.map(({ kind, label }) => (
-              <option key={kind} value={kind}>{label}</option>
+              <option key={kind} value={kind}>
+                {label}
+              </option>
             ))}
           </select>
         </label>
       )}
 
-      <label className="flex items-center gap-2 mb-4 cursor-pointer">
-        <input type="checkbox" checked={obj.isPhysical} onChange={togglePhysical} className="rounded" />
+      {isShape && !obj.isPhysical && (
+        <label className="block mb-2">
+          <span className="text-xs text-slate-600 mb-1 block">Data Page for physical part</span>
+          <select
+            value={dataPageId}
+            onChange={(e) => setDataPageId(e.target.value)}
+            className={selectCls}
+          >
+            <option value="">
+              {dataPages.length ? 'Choose a Data Page' : 'No Data Pages available'}
+            </option>
+            {dataPages.map((page) => (
+              <option key={page.id} value={page.id}>
+                {page.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <label className="flex items-center gap-2 mb-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={obj.isPhysical}
+          onChange={togglePhysical}
+          disabled={!obj.isPhysical && (!dataPages.length || linkPhysical.isPending)}
+          className="rounded"
+        />
         <span className="text-xs text-slate-700">Physical Part</span>
       </label>
-
-      {isShape && obj.isPhysical && (
-        <p className="text-[10px] text-amber-600 bg-amber-50 rounded p-2 mb-3">
-          Data page auto-link — coming soon
+      {isShape && (
+        <p
+          role="status"
+          className={`text-[10px] rounded p-2 mb-3 ${obj.isPhysical ? 'text-emerald-700 bg-emerald-50' : 'text-slate-600 bg-slate-50'}`}
+        >
+          {linkPhysical.isPending || unlinkPhysical.isPending
+            ? 'Synchronizing physical object and Data Page row…'
+            : obj.isPhysical && physicalLink.data
+              ? 'Synchronized with a Data Page row.'
+              : obj.isPhysical
+                ? 'Physical object needs a Data Page row. Uncheck and re-check to repair it.'
+                : 'Not linked to a Data Page row.'}
+          {linkPhysical.error instanceof Error ? ` ${linkPhysical.error.message}` : ''}
+          {unlinkPhysical.error instanceof Error ? ` ${unlinkPhysical.error.message}` : ''}
         </p>
       )}
 
