@@ -13,6 +13,7 @@ import {
   useDeleteLinkedRow,
 } from '@/hooks/useSheetMutations';
 import type { SheetColumn } from '@/models/sheet.model';
+import { useDomainSync } from '@/hooks/useDomainSync';
 
 interface Props {
   pageId: string;
@@ -33,6 +34,7 @@ function moveId(ids: string[], dragId: string, targetId: string): string[] {
 }
 
 export function DataTable({ pageId, projectId }: Props) {
+  const sync = useDomainSync();
   const { data, isLoading } = useSheet(pageId);
   const createCol = useCreateColumn(pageId);
   const updateCol = useUpdateColumn(pageId);
@@ -77,6 +79,7 @@ export function DataTable({ pageId, projectId }: Props) {
     const val = cells[rowId]?.[colId];
     setCellDraft(val == null ? '' : String(val));
     setEditingCell({ rowId, colId });
+    sync.beginEditing(`sheet_cell:${rowId}:${colId}`);
   }
 
   function commitCellEdit() {
@@ -86,18 +89,21 @@ export function DataTable({ pageId, projectId }: Props) {
       columnId: editingCell.colId,
       value: cellDraft,
     });
+    sync.endEditing(`sheet_cell:${editingCell.rowId}:${editingCell.colId}`);
     setEditingCell(null);
   }
 
   function startColEdit(col: SheetColumn) {
     setColDraft(col.name);
     setEditingColId(col.id);
+    sync.beginEditing(`sheet_column:${col.id}`);
   }
 
   function commitColEdit(col: SheetColumn) {
     if (colDraft.trim() && colDraft !== col.name) {
       updateCol.mutate({ id: col.id, patch: { name: colDraft.trim() } });
     }
+    sync.endEditing(`sheet_column:${col.id}`);
     setEditingColId(null);
   }
 

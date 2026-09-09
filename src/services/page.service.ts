@@ -1,6 +1,7 @@
 import { supabase } from '@/infrastructure/supabase/client';
 import type { Page, PageKind } from '@/models/page.model';
 import type { Json } from '@/infrastructure/supabase/database.types';
+import { ConcurrentModificationError } from '@/lib/concurrency';
 
 function mapPage(row: any): Page {
   return {
@@ -64,10 +65,12 @@ export async function createPage(
   return page;
 }
 
-export async function renamePage(id: string, title: string): Promise<Page> {
-  const { data, error } = await supabase
-    .from('page').update({ title }).eq('id', id).select().single();
+export async function renamePage(id: string, title: string, expectedUpdatedAt?: string): Promise<Page> {
+  let query = supabase.from('page').update({ title }).eq('id', id);
+  if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
+  const { data, error } = await query.select().maybeSingle();
   if (error) throw error;
+  if (!data) throw new ConcurrentModificationError('Page');
   return mapPage(data);
 }
 
@@ -80,9 +83,12 @@ export async function deletePage(id: string): Promise<void> {
 export async function updatePageMeta(
   id: string,
   metadata: Record<string, unknown>,
+  expectedUpdatedAt?: string,
 ): Promise<Page> {
-  const { data, error } = await supabase
-    .from('page').update({ metadata: metadata as Json }).eq('id', id).select().single();
+  let query = supabase.from('page').update({ metadata: metadata as Json }).eq('id', id);
+  if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
+  const { data, error } = await query.select().maybeSingle();
   if (error) throw error;
+  if (!data) throw new ConcurrentModificationError('Page');
   return mapPage(data);
 }

@@ -13,6 +13,8 @@ import {
   createDataRowWithPhysicalObject,
   deleteDataRowRelationship,
 } from '@/services/physical-data-link.service';
+import type { SheetData } from '@/hooks/useSheet';
+import { queryKeys } from '@/lib/query-keys';
 
 function inv(qc: ReturnType<typeof useQueryClient>, pageId: string) {
   qc.invalidateQueries({ queryKey: ['sheet', pageId] });
@@ -31,7 +33,16 @@ export function useUpdateColumn(pageId: string) {
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: Parameters<typeof updateColumn>[1] }) =>
       updateColumn(id, patch),
-    onSuccess: () => inv(qc, pageId),
+    onMutate: async ({ id, patch }) => {
+      await qc.cancelQueries({ queryKey: queryKeys.sheet(pageId) });
+      const previous = qc.getQueryData<SheetData>(queryKeys.sheet(pageId));
+      qc.setQueryData<SheetData>(queryKeys.sheet(pageId), (current) => current && ({ ...current,
+        columns: current.columns.map((column) => column.id === id ? { ...column, ...patch } : column),
+      }));
+      return { previous };
+    },
+    onError: (_error, _variables, context) => qc.setQueryData(queryKeys.sheet(pageId), context?.previous),
+    onSettled: () => inv(qc, pageId),
   });
 }
 
@@ -80,7 +91,16 @@ export function useUpsertCell(pageId: string) {
   return useMutation({
     mutationFn: ({ rowId, columnId, value }: { rowId: string; columnId: string; value: unknown }) =>
       upsertCell(rowId, columnId, value),
-    onSuccess: () => inv(qc, pageId),
+    onMutate: async ({ rowId, columnId, value }) => {
+      await qc.cancelQueries({ queryKey: queryKeys.sheet(pageId) });
+      const previous = qc.getQueryData<SheetData>(queryKeys.sheet(pageId));
+      qc.setQueryData<SheetData>(queryKeys.sheet(pageId), (current) => current && ({ ...current,
+        cells: { ...current.cells, [rowId]: { ...current.cells[rowId], [columnId]: value } },
+      }));
+      return { previous };
+    },
+    onError: (_error, _variables, context) => qc.setQueryData(queryKeys.sheet(pageId), context?.previous),
+    onSettled: () => inv(qc, pageId),
   });
 }
 

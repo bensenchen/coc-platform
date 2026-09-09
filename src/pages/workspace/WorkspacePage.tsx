@@ -9,6 +9,8 @@ import type { PageKind } from '@/models/page.model';
 import { ContextCanvas, ContextToolBar, PropertiesPanel } from '@/features/context-page';
 import { DataTable } from '@/features/data-page';
 import { SheetTable } from '@/features/sheet-page';
+import { DomainSyncProvider } from '@/hooks/useDomainSync';
+import { SyncStatus } from '@/components/layout/SyncStatus';
 
 const KIND_LABEL: Record<PageKind, string> = {
   context: 'Context Page',
@@ -41,7 +43,7 @@ export function WorkspacePage() {
   const { currentWorkspace, setCurrentWorkspace, currentProject, setCurrentProject } =
     useWorkspaceStore();
   const { data: projects } = useProjects(currentWorkspace?.id ?? null);
-  const { data: pages = [] } = usePages(currentProject?.id ?? null);
+  const { data: pages = [], isFetched: pagesFetched } = usePages(currentProject?.id ?? null);
 
   useEffect(() => {
     if (!workspaces) return;
@@ -56,7 +58,14 @@ export function WorkspacePage() {
     if (p && p.id !== currentProject?.id) setCurrentProject(p);
   }, [projectSlug, projects, currentProject, setCurrentProject]);
 
-  if (wsLoading)
+  useEffect(() => {
+    if (pageId && pagesFetched && currentProject && !pages.some((candidate) => candidate.id === pageId)) {
+      // A remotely deleted page must not leave editors on a stale entity.
+      navigate(`/w/${workspaceSlug}/p/${projectSlug}`, { replace: true });
+    }
+  }, [currentProject, navigate, pageId, pages, pagesFetched, projectSlug, workspaceSlug]);
+
+  if (wsLoading || !currentWorkspace)
     return (
       <div className="flex h-full items-center justify-center">
         <Spinner />
@@ -67,6 +76,7 @@ export function WorkspacePage() {
 
   if (!page) {
     return (
+      <DomainSyncProvider workspaceId={currentWorkspace!.id} projectId={currentProject?.id}>
       <div className="h-full flex items-center justify-center">
         <div className="text-center text-slate-400">
           <div className="text-6xl mb-3">⬡</div>
@@ -78,11 +88,14 @@ export function WorkspacePage() {
           </div>
         </div>
       </div>
+      </DomainSyncProvider>
     );
   }
 
   return (
+    <DomainSyncProvider workspaceId={currentWorkspace!.id} projectId={currentProject?.id} pageId={page.id}>
     <div className="h-full flex flex-col">
+      <SyncStatus />
       <header className="bg-white border-b border-slate-200 px-6 h-12 flex items-center gap-3 flex-shrink-0">
         <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
           {KIND_LABEL[page.kind]}
@@ -124,5 +137,6 @@ export function WorkspacePage() {
         </div>
       )}
     </div>
+    </DomainSyncProvider>
   );
 }

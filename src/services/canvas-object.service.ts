@@ -1,6 +1,7 @@
 import { supabase } from '@/infrastructure/supabase/client';
 import type { CanvasObject, CanvasObjectType, ConnectorAnchor, AnchorPosition } from '@/models/canvas-object.model';
 import type { Database, Json } from '@/infrastructure/supabase/database.types';
+import { ConcurrentModificationError } from '@/lib/concurrency';
 
 function mapObject(row: any): CanvasObject {
   return {
@@ -97,7 +98,7 @@ export interface UpdateObjectPatch {
   metadata?: Record<string, unknown>;
 }
 
-export async function updateObject(id: string, patch: UpdateObjectPatch): Promise<CanvasObject> {
+export async function updateObject(id: string, patch: UpdateObjectPatch, expectedUpdatedAt?: string): Promise<CanvasObject> {
   const dbPatch: Database['public']['Tables']['canvas_object']['Update'] = {};
   if (patch.name !== undefined) dbPatch.name = patch.name;
   if (patch.positionX !== undefined) dbPatch.position_x = patch.positionX;
@@ -109,13 +110,14 @@ export async function updateObject(id: string, patch: UpdateObjectPatch): Promis
   if (patch.isPhysical !== undefined) dbPatch.is_physical = patch.isPhysical;
   if (patch.metadata !== undefined) dbPatch.metadata = patch.metadata as Json;
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('canvas_object')
     .update(dbPatch)
-    .eq('id', id)
-    .select()
-    .single();
+    .eq('id', id);
+  if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
+  const { data, error } = await query.select().maybeSingle();
   if (error) throw error;
+  if (!data) throw new ConcurrentModificationError('Canvas object');
   return mapObject(data);
 }
 

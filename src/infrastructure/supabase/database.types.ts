@@ -23,11 +23,12 @@ export interface Database {
       project_member: Table<{ project_id: string; user_id: string; role: 'admin' | 'editor' | 'viewer'; created_at: string }>;
       page: Table<{ id: string; project_id: string; kind: 'context' | 'data' | 'data_view' | 'interface_list' | 'icd' | 'sheet'; title: string; position: number; metadata: Json } & Audit>;
       canvas_object: Table<{ id: string; page_id: string; type: 'shape' | 'connector' | 'post_it' | 'mini_sheet' | 'attachment' | 'picture'; name: string | null; position_x: number; position_y: number; width: number | null; height: number | null; rotation: number; z_index: number; is_physical: boolean; metadata: Json } & Audit>;
-      connector_anchor: Table<{ connector_id: string; source_object_id: string | null; source_anchor: string | null; target_object_id: string | null; target_anchor: string | null }>;
-      sheet_column: Table<{ id: string; page_id: string; name: string; position: number; data_type: 'text' | 'number' | 'boolean' | 'date' | 'link'; is_default: boolean; format: Json }>;
-      sheet_row: Table<{ id: string; page_id: string; position: number; canvas_object_id: string | null; format: Json }>;
-      sheet_cell: Table<{ row_id: string; column_id: string; value: Json; format: Json }>;
-      interface: Table<{ id: string; project_id: string; connector_id: string; display_id: string; icd_page_id: string | null; hidden: boolean }>;
+      connector_anchor: Table<{ connector_id: string; source_object_id: string | null; source_anchor: string | null; target_object_id: string | null; target_anchor: string | null; updated_at: string; version: number }>;
+      sheet_column: Table<{ id: string; page_id: string; name: string; position: number; data_type: 'text' | 'number' | 'boolean' | 'date' | 'link'; is_default: boolean; format: Json; updated_at: string; version: number }>;
+      sheet_row: Table<{ id: string; page_id: string; position: number; canvas_object_id: string | null; format: Json; updated_at: string; version: number }>;
+      sheet_cell: Table<{ row_id: string; column_id: string; value: Json; format: Json; updated_at: string; version: number }>;
+      interface: Table<{ id: string; project_id: string; connector_id: string; display_id: string; icd_page_id: string | null; hidden: boolean; updated_at: string; version: number }>;
+      domain_audit_event: Table<{ id: string; occurred_at: string; actor_id: string | null; entity_type: string; entity_id: string; action: 'insert' | 'update' | 'delete'; before_state: Json | null; after_state: Json | null; workspace_id: string | null; project_id: string | null; page_id: string | null }>;
       attachment: Table<{ id: string; project_id: string; storage_path: string; file_name: string; mime_type: string | null; size_bytes: number | null; uploaded_by: string | null; created_at: string }>;
       page_snapshot: Table<{ id: string; page_id: string; taken_at: string; taken_by: string | null; content: Json }>;
     };
@@ -43,4 +44,3 @@ export interface Database {
     CompositeTypes: Record<string, never>;
   };
 }
-
