@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { listObjects, listConnectorAnchors } from '@/services/canvas-object.service';
+import { findPhysicalDataLink } from '@/services/physical-data-link.service';
 import type { CanvasObject, ConnectorAnchor } from '@/models/canvas-object.model';
 
 export interface CanvasData {
@@ -18,5 +19,13 @@ export function useCanvasObjects(pageId: string | null) {
       ]);
       return { objects, anchors };
     },
+  });
+}
+
+export function usePhysicalDataLink(canvasObjectId: string | null) {
+  return useQuery({
+    queryKey: ['physical-data-link', canvasObjectId],
+    enabled: !!canvasObjectId,
+    queryFn: () => findPhysicalDataLink(canvasObjectId!),
   });
 }

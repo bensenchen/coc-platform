@@ -1,19 +1,22 @@
 import { useState } from 'react';
+import { usePages } from '@/hooks/usePages';
 import { useSheet } from '@/hooks/useSheet';
 import {
   useCreateColumn,
   useUpdateColumn,
   useDeleteColumn,
-  useCreateRow,
   useDeleteRow,
   useUpsertCell,
   useReorderColumns,
   useReorderRows,
+  useCreateLinkedPhysicalRow,
+  useDeleteLinkedRow,
 } from '@/hooks/useSheetMutations';
 import type { SheetColumn } from '@/models/sheet.model';
 
 interface Props {
   pageId: string;
+  projectId: string | null;
 }
 
 function moveId(ids: string[], dragId: string, targetId: string): string[] {
@@ -29,13 +32,15 @@ function moveId(ids: string[], dragId: string, targetId: string): string[] {
   return without;
 }
 
-export function DataTable({ pageId }: Props) {
+export function DataTable({ pageId, projectId }: Props) {
   const { data, isLoading } = useSheet(pageId);
   const createCol = useCreateColumn(pageId);
   const updateCol = useUpdateColumn(pageId);
   const deleteCol = useDeleteColumn(pageId);
-  const addRow = useCreateRow(pageId);
   const delRow = useDeleteRow(pageId);
+  const createLinkedRow = useCreateLinkedPhysicalRow(pageId);
+  const deleteLinkedRow = useDeleteLinkedRow(pageId);
+  const { data: pages = [] } = usePages(projectId);
   const upsertCell = useUpsertCell(pageId);
   const reorderCols = useReorderColumns(pageId);
   const reorderRows = useReorderRows(pageId);
@@ -50,12 +55,17 @@ export function DataTable({ pageId }: Props) {
   const [overColId, setOverColId] = useState<string | null>(null);
   const [dragRowId, setDragRowId] = useState<string | null>(null);
   const [overRowId, setOverRowId] = useState<string | null>(null);
+  const [addingRow, setAddingRow] = useState(false);
+  const [rowMode, setRowMode] = useState<'new' | 'existing'>('new');
+  const [contextPageId, setContextPageId] = useState('');
+  const [contextTitle, setContextTitle] = useState('');
+  const [objectName, setObjectName] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const contextPages = pages.filter((page) => page.kind === 'context');
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full text-slate-400">
-        Loading data…
-      </div>
+      <div className="flex items-center justify-center h-full text-slate-400">Loading data…</div>
     );
   }
 
@@ -100,7 +110,13 @@ export function DataTable({ pageId }: Props) {
 
   function handleColDrop(targetId: string) {
     if (dragColId && dragColId !== targetId) {
-      reorderCols.mutate(moveId(columns.map((c) => c.id), dragColId, targetId));
+      reorderCols.mutate(
+        moveId(
+          columns.map((c) => c.id),
+          dragColId,
+          targetId,
+        ),
+      );
     }
     setDragColId(null);
     setOverColId(null);
@@ -108,10 +124,38 @@ export function DataTable({ pageId }: Props) {
 
   function handleRowDrop(targetId: string) {
     if (dragRowId && dragRowId !== targetId) {
-      reorderRows.mutate(moveId(rows.map((r) => r.id), dragRowId, targetId));
+      reorderRows.mutate(
+        moveId(
+          rows.map((r) => r.id),
+          dragRowId,
+          targetId,
+        ),
+      );
     }
     setDragRowId(null);
     setOverRowId(null);
+  }
+
+  function submitLinkedRow() {
+    if (rowMode === 'existing' && !contextPageId) return;
+    createLinkedRow.mutate(
+      rowMode === 'existing'
+        ? { contextPageId, objectName }
+        : { newContextTitle: contextTitle, objectName },
+      {
+        onSuccess: () => {
+          setAddingRow(false);
+          setContextTitle('');
+          setObjectName('');
+          setContextPageId('');
+        },
+      },
+    );
+  }
+
+  function requestRowDelete(rowId: string, linked: boolean) {
+    if (linked) setDeleteTarget(rowId);
+    else delRow.mutate(rowId);
   }
 
   return (
@@ -121,7 +165,7 @@ export function DataTable({ pageId }: Props) {
         <span className="text-sm font-medium text-slate-700">Data Table</span>
         <div className="flex-1" />
         <button
-          onClick={() => addRow.mutate(undefined)}
+          onClick={() => setAddingRow(true)}
           className="px-3 py-1.5 text-xs font-medium rounded bg-indigo-600 text-white hover:bg-indigo-700"
         >
           + Row
@@ -133,6 +177,133 @@ export function DataTable({ pageId }: Props) {
           + Column
         </button>
       </div>
+
+      {addingRow && (
+        <div
+          className="px-4 py-3 bg-indigo-50 border-b border-indigo-100"
+          role="region"
+          aria-label="Create linked row"
+        >
+          <p className="text-xs font-semibold text-slate-700">Add a physical item</p>
+          <p className="text-[11px] text-slate-600 mt-1">
+            Choose how this Data Page row connects to a Context Page. A default physical box is
+            created transactionally.
+          </p>
+          <div className="flex gap-4 mt-2 text-xs">
+            <label>
+              <input type="radio" checked={rowMode === 'new'} onChange={() => setRowMode('new')} />{' '}
+              Create new Context Page and object
+            </label>
+            <label>
+              <input
+                type="radio"
+                checked={rowMode === 'existing'}
+                onChange={() => setRowMode('existing')}
+              />{' '}
+              Link existing Context Page
+            </label>
+          </div>
+          <div className="flex gap-2 mt-2">
+            {rowMode === 'new' ? (
+              <input
+                value={contextTitle}
+                onChange={(e) => setContextTitle(e.target.value)}
+                placeholder="New Context Page title"
+                className="flex-1 text-xs border rounded px-2 py-1 text-slate-900"
+              />
+            ) : (
+              <select
+                value={contextPageId}
+                onChange={(e) => setContextPageId(e.target.value)}
+                className="flex-1 text-xs border rounded px-2 py-1 text-slate-900"
+              >
+                <option value="">Select Context Page…</option>
+                {contextPages.map((page) => (
+                  <option key={page.id} value={page.id}>
+                    {page.title}
+                  </option>
+                ))}
+              </select>
+            )}
+            <input
+              value={objectName}
+              onChange={(e) => setObjectName(e.target.value)}
+              placeholder="Object name (optional)"
+              className="flex-1 text-xs border rounded px-2 py-1 text-slate-900"
+            />
+            <button
+              onClick={submitLinkedRow}
+              disabled={createLinkedRow.isPending || (rowMode === 'existing' && !contextPageId)}
+              className="px-3 py-1 text-xs font-medium rounded bg-indigo-600 text-white disabled:opacity-50"
+            >
+              {createLinkedRow.isPending ? 'Creating…' : 'Create'}
+            </button>
+            <button
+              onClick={() => setAddingRow(false)}
+              className="px-3 py-1 text-xs border rounded"
+            >
+              Cancel
+            </button>
+          </div>
+          {createLinkedRow.error instanceof Error && (
+            <p role="alert" className="text-xs text-red-600 mt-2">
+              Could not create linked row: {createLinkedRow.error.message}
+            </p>
+          )}
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div
+          className="px-4 py-3 bg-red-50 border-b border-red-100"
+          role="alertdialog"
+          aria-label="Delete linked row"
+        >
+          <p className="text-xs font-semibold text-red-800">Delete linked physical item?</p>
+          <p className="text-[11px] text-red-700 mt-1">
+            Delete the row and its linked canvas object, or unlink the row and keep the object on
+            its Context Page.
+          </p>
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={() =>
+                deleteLinkedRow.mutate(
+                  { rowId: deleteTarget, deleteCanvasObject: true },
+                  { onSuccess: () => setDeleteTarget(null) },
+                )
+              }
+              disabled={deleteLinkedRow.isPending}
+              className="px-3 py-1 text-xs rounded bg-red-600 text-white"
+            >
+              Delete row + object
+            </button>
+            <button
+              onClick={() =>
+                deleteLinkedRow.mutate(
+                  { rowId: deleteTarget, deleteCanvasObject: false },
+                  { onSuccess: () => setDeleteTarget(null) },
+                )
+              }
+              disabled={deleteLinkedRow.isPending}
+              className="px-3 py-1 text-xs rounded border border-red-300 text-red-700"
+            >
+              Unlink row only
+            </button>
+            <button
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleteLinkedRow.isPending}
+              className="px-3 py-1 text-xs rounded border"
+            >
+              Cancel
+            </button>
+          </div>
+          {deleteLinkedRow.error instanceof Error && (
+            <p className="text-xs text-red-700 mt-2">
+              Deletion failed: {deleteLinkedRow.error.message}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Add column form */}
       {addingCol && (
@@ -187,12 +358,20 @@ export function DataTable({ pageId }: Props) {
                     key={col.id}
                     draggable
                     onDragStart={() => setDragColId(col.id)}
-                    onDragOver={(e) => { e.preventDefault(); setOverColId(col.id); }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setOverColId(col.id);
+                    }}
                     onDragLeave={() => setOverColId(null)}
                     onDrop={() => handleColDrop(col.id)}
-                    onDragEnd={() => { setDragColId(null); setOverColId(null); }}
+                    onDragEnd={() => {
+                      setDragColId(null);
+                      setOverColId(null);
+                    }}
                     className={`min-w-[140px] px-3 py-2 border-b border-r border-slate-200 text-left font-medium text-slate-700 cursor-grab ${
-                      overColId === col.id && dragColId && dragColId !== col.id ? 'bg-indigo-50' : ''
+                      overColId === col.id && dragColId && dragColId !== col.id
+                        ? 'bg-indigo-50'
+                        : ''
                     } ${dragColId === col.id ? 'opacity-50' : ''}`}
                   >
                     <div className="flex items-center gap-1.5 group">
@@ -233,7 +412,12 @@ export function DataTable({ pageId }: Props) {
               {rows.map((row, idx) => (
                 <tr
                   key={row.id}
-                  onDragOver={(e) => { if (dragRowId) { e.preventDefault(); setOverRowId(row.id); } }}
+                  onDragOver={(e) => {
+                    if (dragRowId) {
+                      e.preventDefault();
+                      setOverRowId(row.id);
+                    }
+                  }}
                   onDrop={() => handleRowDrop(row.id)}
                   className={`hover:bg-slate-50 group/row ${
                     overRowId === row.id && dragRowId && dragRowId !== row.id ? 'bg-indigo-50' : ''
@@ -242,7 +426,10 @@ export function DataTable({ pageId }: Props) {
                   <td
                     draggable
                     onDragStart={() => setDragRowId(row.id)}
-                    onDragEnd={() => { setDragRowId(null); setOverRowId(null); }}
+                    onDragEnd={() => {
+                      setDragRowId(null);
+                      setOverRowId(null);
+                    }}
                     className="px-2 py-1.5 border-b border-r border-slate-100 text-slate-400 text-xs text-center cursor-grab"
                     title="Drag to reorder"
                   >
@@ -271,18 +458,16 @@ export function DataTable({ pageId }: Props) {
                             className="w-full outline-none border border-indigo-400 rounded px-1 text-sm text-slate-900"
                           />
                         ) : (
-                          <span className="text-slate-700">
-                            {val == null ? '' : String(val)}
-                          </span>
+                          <span className="text-slate-700">{val == null ? '' : String(val)}</span>
                         )}
                       </td>
                     );
                   })}
                   <td className="border-b border-slate-100 px-1">
                     <button
-                      onClick={() => delRow.mutate(row.id)}
+                      onClick={() => requestRowDelete(row.id, !!row.canvasObjectId)}
                       className="opacity-0 group-hover/row:opacity-100 text-slate-300 hover:text-red-400 text-xs"
-                      title="Delete row"
+                      title={row.canvasObjectId ? 'Delete or unlink linked row' : 'Delete row'}
                     >
                       ✕
                     </button>
