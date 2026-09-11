@@ -16,7 +16,7 @@ export function WorkspaceMembersPanel({ workspaceId }: Props) {
   const remove = useRemoveMember();
 
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<WorkspaceRole>('editor');
+  const [role, setRole] = useState<WorkspaceRole>('viewer');
   const [error, setError] = useState<string | null>(null);
 
   async function handleInvite(e: React.FormEvent) {
@@ -41,8 +41,7 @@ export function WorkspaceMembersPanel({ workspaceId }: Props) {
           <select value={role} onChange={(e) => setRole(e.target.value as WorkspaceRole)}
             className="h-9 rounded-md border border-slate-300 text-sm px-2">
             <option value="viewer">Viewer</option>
-            <option value="editor">Editor</option>
-            <option value="admin">Admin</option>
+            <option value="workspace_admin">Workspace admin</option>
           </select>
           <Button type="submit" disabled={invite.isPending}>
             {invite.isPending ? 'Inviting…' : 'Invite'}

@@ -11,9 +11,16 @@ import { DataTable } from '@/features/data-page';
 import { SheetTable } from '@/features/sheet-page';
 import { DomainSyncProvider } from '@/hooks/useDomainSync';
 import { SyncStatus } from '@/components/layout/SyncStatus';
+import { MoreHorizontal } from 'lucide-react';
+import { Menu, MenuItem } from '@/components/ui/Menu';
+import { useDeletePage, useRenamePage } from '@/hooks/usePageMutations';
+import { useAccess } from '@/hooks/useAccess';
+import { canEditProject, isSystemAdmin } from '@/lib/permissions';
+import { useAuth } from '@/hooks/useAuth';
 
 const KIND_LABEL: Record<PageKind, string> = {
   context: 'Context Page',
+  org: 'Org Page',
   data: 'Data Page',
   data_view: 'Data View',
   interface_list: 'INTERFACE PAGE',
@@ -24,6 +31,7 @@ const KIND_LABEL: Record<PageKind, string> = {
 function nextPhase(kind: PageKind): number {
   switch (kind) {
     case 'context':
+    case 'org':
       return 6;
     case 'data':
     case 'data_view':
@@ -44,6 +52,11 @@ export function WorkspacePage() {
     useWorkspaceStore();
   const { data: projects } = useProjects(currentWorkspace?.id ?? null);
   const { data: pages = [], isFetched: pagesFetched } = usePages(currentProject?.id ?? null);
+  const { user } = useAuth();
+  const { data: access } = useAccess(currentWorkspace?.id, currentProject?.id);
+  const rename = useRenamePage();
+  const del = useDeletePage();
+  const mayEdit = isSystemAdmin(user) || canEditProject(access?.workspaceRole, access?.projectRole);
 
   useEffect(() => {
     if (!workspaces) return;
@@ -101,9 +114,13 @@ export function WorkspacePage() {
           {KIND_LABEL[page.kind]}
         </span>
         <h1 className="text-base font-semibold text-slate-900">{page.title}</h1>
+        {mayEdit && <div className="ml-auto"><Menu trigger={<button aria-label="Page actions" className="rounded p-1 text-slate-500 hover:bg-slate-100"><MoreHorizontal size={18}/></button>}>
+          <MenuItem onClick={() => { const title = prompt('Page title', page.title); if (title?.trim() && title.trim() !== page.title) rename.mutate({id: page.id, title: title.trim()}); }}>Rename</MenuItem>
+          <MenuItem danger onClick={() => { if (confirm(`Delete "${page.title}"? This cannot be undone.`)) { del.mutate(page.id); navigate(`/w/${workspaceSlug}/p/${projectSlug}`); } }}>Delete page</MenuItem>
+        </Menu></div>}
       </header>
 
-      {page.kind === 'context' && (
+      {(page.kind === 'context' || page.kind === 'org') && (
         <div className="flex flex-col flex-1 overflow-hidden">
           <ContextToolBar pageId={page.id} />
           <div className="flex flex-1 overflow-hidden">
@@ -125,7 +142,7 @@ export function WorkspacePage() {
         </div>
       )}
 
-      {page.kind !== 'context' && page.kind !== 'data' && page.kind !== 'sheet' && (
+      {page.kind !== 'context' && page.kind !== 'org' && page.kind !== 'data' && page.kind !== 'sheet' && (
         <div className="flex-1 flex items-center justify-center text-slate-400">
           <div className="text-center">
             <div className="text-sm">

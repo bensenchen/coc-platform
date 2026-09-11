@@ -20,8 +20,12 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react';
+import { AppNavigation } from '@/components/layout/AppNavigation';
+import { AppFooter } from '@/components/layout/AppFooter';
 import type { Project } from '@/models/project.model';
 import type { Workspace } from '@/models/workspace.model';
+import { useAccess } from '@/hooks/useAccess';
+import { canAdminWorkspace, isSystemAdmin } from '@/lib/permissions';
 
 function workspaceMark(name: string) {
   return name.trim().slice(0, 1).toUpperCase() || 'W';
@@ -33,6 +37,8 @@ export function HomePage() {
   const { data: workspaces = [], isLoading: wsLoading } = useWorkspaces();
   const { currentWorkspace, setCurrentWorkspace, setCurrentProject } = useWorkspaceStore();
   const { data: projects = [] } = useProjects(currentWorkspace?.id ?? null);
+  const { data: access } = useAccess(currentWorkspace?.id);
+  const mayCreateProject = isSystemAdmin(user) || canAdminWorkspace(access?.workspaceRole);
   const acceptInvitations = useAcceptMyInvitations();
   const [showCreateWs, setShowCreateWs] = useState(false);
   const [showCreateProject, setShowCreateProject] = useState(false);
@@ -60,7 +66,9 @@ export function HomePage() {
 
   return (
     <div className="min-h-full bg-[#f7f8fc] text-slate-900">
-      <header className="h-[72px] border-b border-slate-200/80 bg-white/90 px-5 backdrop-blur sm:px-8">
+      <AppNavigation />
+      {/* Shared navigation replaces the legacy home-only header. */}
+      <header className="hidden h-[72px] border-b border-slate-200/80 bg-white/90 px-5 backdrop-blur sm:px-8">
         <div className="mx-auto flex h-full max-w-7xl items-center justify-between">
           <button
             onClick={() => navigate('/home')}
@@ -127,7 +135,7 @@ export function HomePage() {
               >
                 <Plus size={16} /> Create workspace
               </Button>
-              {currentWorkspace && (
+              {currentWorkspace && mayCreateProject && (
                 <Button
                   size="md"
                   variant="secondary"
@@ -225,9 +233,9 @@ export function HomePage() {
                   <h2 className="mt-1 text-2xl font-bold tracking-tight">Projects</h2>
                 </div>
               </div>
-              <Button size="sm" onClick={() => setShowCreateProject(true)}>
+              {mayCreateProject && <Button size="sm" onClick={() => setShowCreateProject(true)}>
                 <Plus size={15} /> New project
-              </Button>
+              </Button>}
             </div>
             {projects.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center">
@@ -236,9 +244,9 @@ export function HomePage() {
                 <p className="mt-1 text-sm text-slate-500">
                   Create the first project in {currentWorkspace.name} to begin.
                 </p>
-                <Button size="sm" className="mt-5" onClick={() => setShowCreateProject(true)}>
+                {mayCreateProject && <Button size="sm" className="mt-5" onClick={() => setShowCreateProject(true)}>
                   <Plus size={15} /> Create project
-                </Button>
+                </Button>}
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -269,6 +277,7 @@ export function HomePage() {
           </section>
         )}
       </main>
+      <AppFooter />
       <CreateWorkspaceDialog open={showCreateWs} onClose={() => setShowCreateWs(false)} />
       {currentWorkspace && (
         <CreateProjectDialog

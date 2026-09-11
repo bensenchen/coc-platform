@@ -1,4 +1,4 @@
-export type ProjectRole = 'admin' | 'editor' | 'viewer';
+export type ProjectRole = 'project_editor' | 'commenter' | 'viewer';
 
 export interface Project {
   id: string;
