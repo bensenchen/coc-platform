@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ArrowLeft, Plus } from 'lucide-react';
@@ -7,6 +7,9 @@ import { Spinner } from '@/components/ui/Spinner';
 import { WorkspaceMembersPanel } from '@/features/workspace-mgmt/WorkspaceMembersPanel';
 import { CreateWorkspaceDialog } from '@/features/workspace-mgmt/CreateWorkspaceDialog';
 import { useDeleteWorkspace, useRenameWorkspace } from '@/hooks/useWorkspaceMutations';
+import { useAccess } from '@/hooks/useAccess';
+import { useAuth } from '@/hooks/useAuth';
+import { canAdminWorkspace, isSystemAdmin } from '@/lib/permissions';
 
 export function AdminSettingsPage() {
   const { data: workspaces = [], isLoading } = useWorkspaces();
@@ -15,20 +18,28 @@ export function AdminSettingsPage() {
   const rename = useRenameWorkspace();
   const del = useDeleteWorkspace();
   const selected = workspaces.find((w) => w.id === selectedId) ?? workspaces[0] ?? null;
+  const { user } = useAuth();
+  const location = useLocation();
+  const systemAdmin = isSystemAdmin(user);
+  const { data: access } = useAccess(selected?.id);
+  const mayAdmin = systemAdmin || canAdminWorkspace(access?.workspaceRole);
+
+  if (location.pathname === '/admin' && !systemAdmin) return <Navigate to="/settings" replace />;
 
   return (
     <div className="min-h-full bg-slate-50">
       <header className="border-b border-slate-200 bg-white px-6 h-14 flex items-center gap-4">
         <Link to="/home"><Button variant="ghost" size="sm"><ArrowLeft size={14}/> Back</Button></Link>
-        <h1 className="text-lg font-bold text-slate-900">Admin Settings</h1>
+        <h1 className="text-lg font-bold text-slate-900">{systemAdmin && location.pathname === '/admin' ? 'System Administration' : 'Settings'}</h1>
+        <Link to="/legal" className="ml-auto text-xs text-indigo-600 hover:underline">Legal &amp; IP notice</Link>
       </header>
       <main className="max-w-5xl mx-auto p-8 grid grid-cols-[260px_1fr] gap-6">
         <aside className="bg-white border border-slate-200 rounded-lg p-3">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-slate-900">Workspaces</h2>
-            <button onClick={() => setShowCreate(true)} className="text-slate-500 hover:text-slate-700">
+            {systemAdmin && <button onClick={() => setShowCreate(true)} className="text-slate-500 hover:text-slate-700">
               <Plus size={14}/>
-            </button>
+            </button>}
           </div>
           {isLoading ? <Spinner /> : workspaces.length === 0 ? (
             <p className="text-xs text-slate-500">No workspaces.</p>
@@ -51,7 +62,7 @@ export function AdminSettingsPage() {
             <>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-slate-900">{selected.name}</h2>
-                <div className="flex gap-2">
+                {mayAdmin && <div className="flex gap-2">
                   <Button size="sm" variant="secondary" onClick={() => {
                     const n = prompt('New workspace name', selected.name);
                     if (n && n.trim() && n !== selected.name) rename.mutate({ id: selected.id, name: n.trim() });
@@ -62,9 +73,9 @@ export function AdminSettingsPage() {
                       setSelectedId(null);
                     }
                   }}>Delete</Button>
-                </div>
+                </div>}
               </div>
-              <WorkspaceMembersPanel workspaceId={selected.id} />
+              {mayAdmin ? <WorkspaceMembersPanel workspaceId={selected.id} /> : <p className="text-sm text-slate-500">You have viewer access. Workspace administration is limited to workspace admins.</p>}
             </>
           ) : (
             <p className="text-sm text-slate-500">Select a workspace or create one.</p>
@@ -72,7 +83,7 @@ export function AdminSettingsPage() {
         </section>
       </main>
 
-      <CreateWorkspaceDialog open={showCreate} onClose={() => setShowCreate(false)} />
+      {systemAdmin && <CreateWorkspaceDialog open={showCreate} onClose={() => setShowCreate(false)} />}
     </div>
   );
 }

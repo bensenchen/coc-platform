@@ -17,11 +17,11 @@ export interface Database {
   public: {
     Tables: {
       workspace: Table<{ id: string; name: string; slug: string } & Audit>;
-      workspace_member: Table<{ workspace_id: string; user_id: string; role: 'admin' | 'editor' | 'viewer'; created_at: string }>;
-      workspace_invitation: Table<{ id: string; workspace_id: string; email: string; role: 'admin' | 'editor' | 'viewer'; status: 'pending' | 'accepted' | 'expired' | 'revoked'; invited_by: string | null; created_at: string; accepted_at: string | null }>;
+      workspace_member: Table<{ workspace_id: string; user_id: string; role: 'workspace_admin' | 'viewer'; created_at: string }>;
+      workspace_invitation: Table<{ id: string; workspace_id: string; email: string; role: 'workspace_admin' | 'viewer'; status: 'pending' | 'accepted' | 'expired' | 'revoked'; invited_by: string | null; created_at: string; accepted_at: string | null }>;
       project: Table<{ id: string; workspace_id: string; name: string; slug: string } & Audit>;
-      project_member: Table<{ project_id: string; user_id: string; role: 'admin' | 'editor' | 'viewer'; created_at: string }>;
-      page: Table<{ id: string; project_id: string; kind: 'context' | 'data' | 'data_view' | 'interface_list' | 'icd' | 'sheet'; title: string; position: number; metadata: Json } & Audit>;
+      project_member: Table<{ project_id: string; user_id: string; role: 'project_editor' | 'commenter' | 'viewer'; created_at: string }>;
+      page: Table<{ id: string; project_id: string; kind: 'context' | 'org' | 'data' | 'data_view' | 'interface_list' | 'icd' | 'sheet'; title: string; position: number; metadata: Json } & Audit>;
       canvas_object: Table<{ id: string; page_id: string; type: 'shape' | 'connector' | 'post_it' | 'mini_sheet' | 'attachment' | 'picture'; name: string | null; position_x: number; position_y: number; width: number | null; height: number | null; rotation: number; z_index: number; is_physical: boolean; metadata: Json } & Audit>;
       connector_anchor: Table<{ connector_id: string; source_object_id: string | null; source_anchor: string | null; target_object_id: string | null; target_anchor: string | null; updated_at: string; version: number }>;
       sheet_column: Table<{ id: string; page_id: string; name: string; position: number; data_type: 'text' | 'number' | 'boolean' | 'date' | 'link'; is_default: boolean; format: Json; updated_at: string; version: number }>;

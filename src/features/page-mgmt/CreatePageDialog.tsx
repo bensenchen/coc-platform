@@ -7,6 +7,7 @@ import type { PageKind } from '@/models/page.model';
 
 const KIND_LABELS: Record<PageKind, string> = {
   context: 'Context Page',
+  org: 'Org Page',
   data: 'Data Page',
   data_view: 'Data View',
   interface_list: 'List of Interfaces',

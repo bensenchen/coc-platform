@@ -68,7 +68,7 @@ export async function listWorkspaceInvitations(workspaceId: string): Promise<Wor
   return (data ?? []).map(mapInvitation);
 }
 
-export async function inviteMember(workspaceId: string, email: string, role: WorkspaceRole = 'editor') {
+export async function inviteMember(workspaceId: string, email: string, role: WorkspaceRole = 'viewer') {
   const { data: { user } } = await supabase.auth.getUser();
   const { error } = await supabase
     .from('workspace_invitation')

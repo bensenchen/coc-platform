@@ -1,4 +1,4 @@
-export type PageKind = 'context' | 'data' | 'data_view' | 'interface_list' | 'icd' | 'sheet';
+export type PageKind = 'context' | 'org' | 'data' | 'data_view' | 'interface_list' | 'icd' | 'sheet';
 
 export interface Page<K extends PageKind = PageKind> {
   id: string;

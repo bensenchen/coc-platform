@@ -1,4 +1,4 @@
-export type WorkspaceRole = 'admin' | 'editor' | 'viewer';
+export type WorkspaceRole = 'workspace_admin' | 'viewer';
 
 export interface Workspace {
   id: string;
