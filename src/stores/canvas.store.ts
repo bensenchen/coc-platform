@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { ShapeKind, ConnectorKind } from '@/models/canvas-object.model';
 
-export type CanvasTool = 'select' | 'shape' | 'connector' | 'pan';
+export type CanvasTool = 'select' | 'shape' | 'connector';
 
 interface CanvasState {
   tool: CanvasTool;

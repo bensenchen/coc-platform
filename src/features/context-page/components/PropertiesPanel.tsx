@@ -12,6 +12,63 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { resolveConnStyle } from './connector-utils';
 import type { ShapeKind } from '@/models/canvas-object.model';
+import { useSheet } from '@/hooks/useSheet';
+import type { CanvasObject } from '@/models/canvas-object.model';
+
+function LinkedAttributes({
+  object,
+  dataPageId,
+  rowId,
+  setMeta,
+  applyToAll,
+}: {
+  object: CanvasObject;
+  dataPageId: string;
+  rowId: string;
+  setMeta: (patch: Record<string, unknown>) => void;
+  applyToAll: (ids: string[]) => void;
+}) {
+  const { data } = useSheet(dataPageId);
+  if (!data) return null;
+  const configured = object.metadata.visibleAttributeIds as string[] | undefined;
+  const visible = new Set(
+    configured ?? data.columns.filter((column) => column.isDefault).map((column) => column.id),
+  );
+  return (
+    <section className="mb-3 border-t border-slate-100 pt-3">
+      <div className="mb-2 text-xs font-semibold text-slate-600">Data attributes</div>
+      {data.columns.map((column) => (
+        <div key={column.id} className="mb-2">
+          <label className="flex items-center gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={visible.has(column.id)}
+              onChange={() => {
+                const next = new Set(visible);
+                next.has(column.id) ? next.delete(column.id) : next.add(column.id);
+                setMeta({ visibleAttributeIds: [...next] });
+              }}
+            />
+            {column.name}
+          </label>
+          {visible.has(column.id) && (
+            <div className="ml-5 truncate text-xs font-medium text-slate-900">
+              {String(data.cells[rowId]?.[column.id] ?? '—')}
+            </div>
+          )}
+        </div>
+      ))}
+      <Button
+        size="sm"
+        variant="secondary"
+        className="w-full"
+        onClick={() => applyToAll([...visible])}
+      >
+        Apply visibility to all
+      </Button>
+    </section>
+  );
+}
 
 const SHAPE_KINDS: { kind: ShapeKind; label: string }[] = [
   { kind: 'rect', label: 'Rectangle' },
@@ -71,7 +128,25 @@ export function PropertiesPanel({ pageId, projectId }: Props) {
     updateObj.mutate({ id: obj.id, patch: { metadata: { ...(obj.metadata as any), ...patch } } });
   }
 
+  function applyVisibilityToAll(ids: string[]) {
+    for (const target of data?.objects ?? []) {
+      if (target.type === 'shape' && target.isPhysical)
+        updateObj.mutate({
+          id: target.id,
+          patch: {
+            metadata: {
+              ...(target.metadata as any),
+              visibleAttributeIds: ids,
+              attributeVisibilityDefault: true,
+            },
+          },
+        });
+    }
+  }
+
   const dataPages = pages.filter((page) => page.kind === 'data');
+  const contextPages = pages.filter((page) => page.kind === 'context' && page.id !== pageId);
+  const icdPages = pages.filter((page) => page.kind === 'icd');
 
   function togglePhysical() {
     if (!obj) return;
@@ -101,7 +176,7 @@ export function PropertiesPanel({ pageId, projectId }: Props) {
   return (
     <div className="w-56 flex-shrink-0 bg-white border-l border-slate-200 p-4 overflow-y-auto">
       <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-        {isConnector ? 'Connector' : 'Shape'}
+        {isConnector ? 'Connector' : obj.type === 'shape' ? 'Shape' : obj.type}
       </h3>
 
       <label className="block mb-3">
@@ -205,6 +280,54 @@ export function PropertiesPanel({ pageId, projectId }: Props) {
         </label>
       )}
 
+      {obj.type !== 'attachment' && obj.type !== 'picture' && (
+        <label className="block mb-3">
+          <span className="text-xs text-slate-600 mb-1 block">Child context</span>
+          <select
+            className={selectCls}
+            value={String((obj.metadata as any).childPageId ?? '')}
+            onChange={(e) => setMeta({ childPageId: e.target.value || null })}
+          >
+            <option value="">None</option>
+            {contextPages.map((page) => (
+              <option key={page.id} value={page.id}>
+                {page.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {isConnector && (
+        <>
+          <label className="flex items-center gap-2 mb-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={Boolean((obj.metadata as any).isInterface)}
+              onChange={(e) => setMeta({ isInterface: e.target.checked })}
+            />
+            <span className="text-xs text-slate-700">Interface</span>
+          </label>
+          {Boolean((obj.metadata as any).isInterface) && (
+            <label className="block mb-3">
+              <span className="text-xs text-slate-600 mb-1 block">ICD page</span>
+              <select
+                className={selectCls}
+                value={String((obj.metadata as any).icdPageId ?? '')}
+                onChange={(e) => setMeta({ icdPageId: e.target.value || null })}
+              >
+                <option value="">None</option>
+                {icdPages.map((page) => (
+                  <option key={page.id} value={page.id}>
+                    {page.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </>
+      )}
+
       {isShape && !obj.isPhysical && (
         <label className="block mb-2">
           <span className="text-xs text-slate-600 mb-1 block">Data Page for physical part</span>
@@ -224,16 +347,18 @@ export function PropertiesPanel({ pageId, projectId }: Props) {
           </select>
         </label>
       )}
-      <label className="flex items-center gap-2 mb-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={obj.isPhysical}
-          onChange={togglePhysical}
-          disabled={!obj.isPhysical && (!dataPages.length || linkPhysical.isPending)}
-          className="rounded"
-        />
-        <span className="text-xs text-slate-700">Physical Part</span>
-      </label>
+      {isShape && (
+        <label className="flex items-center gap-2 mb-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={obj.isPhysical}
+            onChange={togglePhysical}
+            disabled={!obj.isPhysical && (!dataPages.length || linkPhysical.isPending)}
+            className="rounded"
+          />
+          <span className="text-xs text-slate-700">Physical Part</span>
+        </label>
+      )}
       {isShape && (
         <p
           role="status"
@@ -249,6 +374,15 @@ export function PropertiesPanel({ pageId, projectId }: Props) {
           {linkPhysical.error instanceof Error ? ` ${linkPhysical.error.message}` : ''}
           {unlinkPhysical.error instanceof Error ? ` ${unlinkPhysical.error.message}` : ''}
         </p>
+      )}
+      {isShape && physicalLink.data && (
+        <LinkedAttributes
+          object={obj}
+          dataPageId={physicalLink.data.dataPageId}
+          rowId={physicalLink.data.sheetRowId}
+          setMeta={setMeta}
+          applyToAll={applyVisibilityToAll}
+        />
       )}
 
       <div className="pt-2 border-t border-slate-100">
