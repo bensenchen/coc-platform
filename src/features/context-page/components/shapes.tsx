@@ -21,6 +21,7 @@ interface ShapeProps {
   draggable?: boolean;
   onDragEnd?: (x: number, y: number) => void;
   onClick?: (e?: any) => void;
+  onDoubleClick?: (e?: any) => void;
   onMouseDown?: (e?: any) => void;
   fontSize?: number;
 }
@@ -35,7 +36,21 @@ function shapeFill(isPhysical: boolean) {
   return isPhysical ? PHYSICAL_FILL : FILL;
 }
 
-function Label({ x, y, width, height, text, fontSize = 11 }: { x: number; y: number; width: number; height: number; text: string; fontSize?: number }) {
+function Label({
+  x,
+  y,
+  width,
+  height,
+  text,
+  fontSize = 11,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  fontSize?: number;
+}) {
   return (
     <Text
       x={x + LABEL_PADDING}
@@ -55,19 +70,32 @@ function Label({ x, y, width, height, text, fontSize = 11 }: { x: number; y: num
 }
 
 export function ShapeNode({
-  x, y, width, height, kind, name, isPhysical, isSelected,
-  draggable = true, onDragEnd, onClick, onMouseDown, fontSize = 11,
+  x,
+  y,
+  width,
+  height,
+  kind,
+  name,
+  isPhysical,
+  isSelected,
+  draggable = true,
+  onDragEnd,
+  onClick,
+  onDoubleClick,
+  onMouseDown,
+  fontSize = 11,
 }: ShapeProps) {
   const fill = shapeFill(isPhysical);
   const stroke = shapeStroke(isSelected);
   const strokeWidth = shapeStrokeWidth(isSelected);
 
   const commonGroup = {
-    x, y, draggable,
-    onDragEnd: onDragEnd
-      ? (e: any) => onDragEnd(e.target.x(), e.target.y())
-      : undefined,
+    x,
+    y,
+    draggable,
+    onDragEnd: onDragEnd ? (e: any) => onDragEnd(e.target.x(), e.target.y()) : undefined,
     onClick,
+    onDblClick: onDoubleClick,
     onMouseDown,
   };
 
@@ -75,16 +103,33 @@ export function ShapeNode({
     case 'rect':
       return (
         <Group {...commonGroup}>
-          <Rect width={width} height={height} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
-          {name && <Label x={0} y={0} width={width} height={height} text={name} fontSize={fontSize} />}
+          <Rect
+            width={width}
+            height={height}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+          />
+          {name && (
+            <Label x={0} y={0} width={width} height={height} text={name} fontSize={fontSize} />
+          )}
         </Group>
       );
 
     case 'process':
       return (
         <Group {...commonGroup}>
-          <Rect width={width} height={height} fill={fill} stroke={stroke} strokeWidth={strokeWidth} cornerRadius={10} />
-          {name && <Label x={0} y={0} width={width} height={height} text={name} fontSize={fontSize} />}
+          <Rect
+            width={width}
+            height={height}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            cornerRadius={10}
+          />
+          {name && (
+            <Label x={0} y={0} width={width} height={height} text={name} fontSize={fontSize} />
+          )}
         </Group>
       );
 
@@ -92,11 +137,17 @@ export function ShapeNode({
       return (
         <Group {...commonGroup}>
           <Ellipse
-            x={width / 2} y={height / 2}
-            radiusX={width / 2} radiusY={height / 2}
-            fill={fill} stroke={stroke} strokeWidth={strokeWidth}
+            x={width / 2}
+            y={height / 2}
+            radiusX={width / 2}
+            radiusY={height / 2}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={strokeWidth}
           />
-          {name && <Label x={0} y={0} width={width} height={height} text={name} fontSize={fontSize} />}
+          {name && (
+            <Label x={0} y={0} width={width} height={height} text={name} fontSize={fontSize} />
+          )}
         </Group>
       );
 
@@ -105,7 +156,16 @@ export function ShapeNode({
       return (
         <Group {...commonGroup}>
           <Line closed points={pts} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
-          {name && <Label x={width * 0.2} y={height * 0.2} width={width * 0.6} height={height * 0.6} text={name} fontSize={fontSize} />}
+          {name && (
+            <Label
+              x={width * 0.2}
+              y={height * 0.2}
+              width={width * 0.6}
+              height={height * 0.6}
+              text={name}
+              fontSize={fontSize}
+            />
+          )}
         </Group>
       );
     }
@@ -115,7 +175,16 @@ export function ShapeNode({
       return (
         <Group {...commonGroup}>
           <Line closed points={pts} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
-          {name && <Label x={width * 0.1} y={height * 0.4} width={width * 0.8} height={height * 0.4} text={name} fontSize={fontSize} />}
+          {name && (
+            <Label
+              x={width * 0.1}
+              y={height * 0.4}
+              width={width * 0.8}
+              height={height * 0.4}
+              text={name}
+              fontSize={fontSize}
+            />
+          )}
         </Group>
       );
     }
@@ -162,7 +231,8 @@ export function ShapeNode({
                 const a = 2 * Math.PI * (i / 48);
                 const px = cxx + cxx * Math.cos(a);
                 const py = ry + ry * Math.sin(a);
-                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
               }
               ctx.closePath();
               ctx.fill();
@@ -178,7 +248,16 @@ export function ShapeNode({
               ctx.fillStrokeShape(shape);
             }}
           />
-          {name && <Label x={0} y={ry} width={width} height={height - ry} text={name} fontSize={fontSize} />}
+          {name && (
+            <Label
+              x={0}
+              y={ry}
+              width={width}
+              height={height - ry}
+              text={name}
+              fontSize={fontSize}
+            />
+          )}
         </Group>
       );
     }

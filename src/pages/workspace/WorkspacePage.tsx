@@ -58,6 +58,19 @@ export function WorkspacePage() {
   const del = useDeletePage();
   const mayEdit = isSystemAdmin(user) || canEditProject(access?.workspaceRole, access?.projectRole);
 
+  function openObjectTarget(object: import('@/models/canvas-object.model').CanvasObject) {
+    const child = object.metadata.childPageId as string | undefined;
+    const icd = object.metadata.icdPageId as string | undefined;
+    let target = child || icd;
+    if (child && icd)
+      target = window.confirm('Open the child Context Page? Choose Cancel to open the ICD page.')
+        ? child
+        : icd;
+    if (target) navigate(`/w/${workspaceSlug}/p/${projectSlug}/page/${target}`);
+    else if (object.type === 'attachment' && typeof object.metadata.dataUrl === 'string')
+      window.open(object.metadata.dataUrl, '_blank', 'noopener,noreferrer');
+  }
+
   useEffect(() => {
     if (!workspaces) return;
     const w = workspaces.find((x) => x.slug === workspaceSlug);
@@ -72,7 +85,12 @@ export function WorkspacePage() {
   }, [projectSlug, projects, currentProject, setCurrentProject]);
 
   useEffect(() => {
-    if (pageId && pagesFetched && currentProject && !pages.some((candidate) => candidate.id === pageId)) {
+    if (
+      pageId &&
+      pagesFetched &&
+      currentProject &&
+      !pages.some((candidate) => candidate.id === pageId)
+    ) {
       // A remotely deleted page must not leave editors on a stale entity.
       navigate(`/w/${workspaceSlug}/p/${projectSlug}`, { replace: true });
     }
@@ -90,70 +108,113 @@ export function WorkspacePage() {
   if (!page) {
     return (
       <DomainSyncProvider workspaceId={currentWorkspace!.id} projectId={currentProject?.id}>
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center text-slate-400">
-          <div className="text-6xl mb-3">⬡</div>
-          <div className="text-sm font-medium text-slate-600">
-            {currentProject?.name ?? 'No project selected'}
-          </div>
-          <div className="text-xs mt-1">
-            Select a page from the sidebar, or create one with the "+" buttons.
+        <div className="h-full flex items-center justify-center">
+          <div className="text-center text-slate-400">
+            <div className="text-6xl mb-3">⬡</div>
+            <div className="text-sm font-medium text-slate-600">
+              {currentProject?.name ?? 'No project selected'}
+            </div>
+            <div className="text-xs mt-1">
+              Select a page from the sidebar, or create one with the "+" buttons.
+            </div>
           </div>
         </div>
-      </div>
       </DomainSyncProvider>
     );
   }
 
   return (
-    <DomainSyncProvider workspaceId={currentWorkspace!.id} projectId={currentProject?.id} pageId={page.id}>
-    <div className="h-full flex flex-col">
-      <SyncStatus />
-      <header className="bg-white border-b border-slate-200 px-6 h-12 flex items-center gap-3 flex-shrink-0">
-        <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
-          {KIND_LABEL[page.kind]}
-        </span>
-        <h1 className="text-base font-semibold text-slate-900">{page.title}</h1>
-        {mayEdit && <div className="ml-auto"><Menu trigger={<button aria-label="Page actions" className="rounded p-1 text-slate-500 hover:bg-slate-100"><MoreHorizontal size={18}/></button>}>
-          <MenuItem onClick={() => { const title = prompt('Page title', page.title); if (title?.trim() && title.trim() !== page.title) rename.mutate({id: page.id, title: title.trim()}); }}>Rename</MenuItem>
-          <MenuItem danger onClick={() => { if (confirm(`Delete "${page.title}"? This cannot be undone.`)) { del.mutate(page.id); navigate(`/w/${workspaceSlug}/p/${projectSlug}`); } }}>Delete page</MenuItem>
-        </Menu></div>}
-      </header>
-
-      {(page.kind === 'context' || page.kind === 'org') && (
-        <div className="flex flex-col flex-1 overflow-hidden">
-          <ContextToolBar pageId={page.id} />
-          <div className="flex flex-1 overflow-hidden">
-            <ContextCanvas pageId={page.id} />
-            <PropertiesPanel pageId={page.id} projectId={currentProject?.id ?? null} />
-          </div>
-        </div>
-      )}
-
-      {page.kind === 'data' && (
-        <div className="flex-1 overflow-hidden">
-          <DataTable pageId={page.id} projectId={currentProject?.id ?? null} />
-        </div>
-      )}
-
-      {page.kind === 'sheet' && currentProject && (
-        <div className="flex-1 overflow-hidden">
-          <SheetTable sheetPage={page} projectId={currentProject.id} />
-        </div>
-      )}
-
-      {page.kind !== 'context' && page.kind !== 'org' && page.kind !== 'data' && page.kind !== 'sheet' && (
-        <div className="flex-1 flex items-center justify-center text-slate-400">
-          <div className="text-center">
-            <div className="text-sm">
-              Page renderer for <strong>{KIND_LABEL[page.kind]}</strong> comes in Phase{' '}
-              {nextPhase(page.kind)}+
+    <DomainSyncProvider
+      workspaceId={currentWorkspace!.id}
+      projectId={currentProject?.id}
+      pageId={page.id}
+    >
+      <div className="h-full flex flex-col">
+        <SyncStatus />
+        <header className="bg-white border-b border-slate-200 px-6 h-12 flex items-center gap-3 flex-shrink-0">
+          <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+            {KIND_LABEL[page.kind]}
+          </span>
+          <h1 className="text-base font-semibold text-slate-900">{page.title}</h1>
+          {mayEdit && (
+            <div className="ml-auto">
+              <Menu
+                trigger={
+                  <button
+                    aria-label="Page actions"
+                    className="rounded p-1 text-slate-500 hover:bg-slate-100"
+                  >
+                    <MoreHorizontal size={18} />
+                  </button>
+                }
+              >
+                <MenuItem
+                  onClick={() => {
+                    const title = prompt('Page title', page.title);
+                    if (title?.trim() && title.trim() !== page.title)
+                      rename.mutate({ id: page.id, title: title.trim() });
+                  }}
+                >
+                  Rename
+                </MenuItem>
+                <MenuItem
+                  danger
+                  onClick={() => {
+                    if (confirm(`Delete "${page.title}"? This cannot be undone.`)) {
+                      del.mutate(page.id);
+                      navigate(`/w/${workspaceSlug}/p/${projectSlug}`);
+                    }
+                  }}
+                >
+                  Delete page
+                </MenuItem>
+              </Menu>
             </div>
-            <div className="text-xs mt-1 font-mono text-slate-300">{page.id}</div>
+          )}
+        </header>
+
+        {(page.kind === 'context' || page.kind === 'org') && (
+          <div className="flex flex-col flex-1 overflow-hidden">
+            <ContextToolBar
+              pageId={page.id}
+              onAddFile={(kind) =>
+                window.dispatchEvent(new CustomEvent('context:add-file', { detail: kind }))
+              }
+            />
+            <div className="flex flex-1 overflow-hidden">
+              <ContextCanvas pageId={page.id} onObjectDoubleClick={openObjectTarget} />
+              <PropertiesPanel pageId={page.id} projectId={currentProject?.id ?? null} />
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+
+        {page.kind === 'data' && (
+          <div className="flex-1 overflow-hidden">
+            <DataTable pageId={page.id} projectId={currentProject?.id ?? null} />
+          </div>
+        )}
+
+        {page.kind === 'sheet' && currentProject && (
+          <div className="flex-1 overflow-hidden">
+            <SheetTable sheetPage={page} projectId={currentProject.id} />
+          </div>
+        )}
+
+        {page.kind !== 'context' &&
+          page.kind !== 'org' &&
+          page.kind !== 'data' &&
+          page.kind !== 'sheet' && (
+            <div className="flex-1 flex items-center justify-center text-slate-400">
+              <div className="text-center">
+                <div className="text-sm">
+                  Page renderer for <strong>{KIND_LABEL[page.kind]}</strong> comes in Phase{' '}
+                  {nextPhase(page.kind)}+
+                </div>
+                <div className="text-xs mt-1 font-mono text-slate-300">{page.id}</div>
+              </div>
+            </div>
+          )}
+      </div>
     </DomainSyncProvider>
   );
 }

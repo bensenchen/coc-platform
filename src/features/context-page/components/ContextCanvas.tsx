@@ -1,5 +1,17 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { Stage, Layer, Arrow, Line, Rect, Circle, Group, Text, Label, Tag } from 'react-konva';
+import {
+  Stage,
+  Layer,
+  Arrow,
+  Line,
+  Rect,
+  Circle,
+  Group,
+  Text,
+  Label,
+  Tag,
+  Image as KonvaImage,
+} from 'react-konva';
 import { useCanvasObjects } from '@/hooks/useCanvasObjects';
 import {
   useCreateObject,
@@ -23,6 +35,7 @@ const HIT_PAD = 8;
 
 interface Props {
   pageId: string;
+  onObjectDoubleClick?: (object: CanvasObject) => void;
 }
 
 interface EndpointHit {
@@ -51,8 +64,12 @@ function objCenter(o: CanvasObject): [number, number] {
 function containsPoint(o: CanvasObject, px: number, py: number, pad = 0): boolean {
   const w = o.width ?? DEFAULT_W;
   const h = o.height ?? DEFAULT_H;
-  return px >= o.positionX - pad && px <= o.positionX + w + pad
-    && py >= o.positionY - pad && py <= o.positionY + h + pad;
+  return (
+    px >= o.positionX - pad &&
+    px <= o.positionX + w + pad &&
+    py >= o.positionY - pad &&
+    py <= o.positionY + h + pad
+  );
 }
 
 function unitTowards(fromX: number, fromY: number, toX: number, toY: number): [number, number] {
@@ -62,17 +79,79 @@ function unitTowards(fromX: number, fromY: number, toX: number, toY: number): [n
   return [dx / len, dy / len];
 }
 
-export function ContextCanvas({ pageId }: Props) {
+function PictureNode({
+  object,
+  selected,
+  onClick,
+  onDoubleClick,
+  onDragEnd,
+}: {
+  object: CanvasObject;
+  selected: boolean;
+  onClick: (e: any) => void;
+  onDoubleClick: () => void;
+  onDragEnd: (x: number, y: number) => void;
+}) {
+  const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const src = (object.metadata as any)?.dataUrl as string | undefined;
+  useEffect(() => {
+    if (!src) return setImage(null);
+    const next = new window.Image();
+    next.onload = () => setImage(next);
+    next.src = src;
+  }, [src]);
+  return (
+    <Group
+      x={object.positionX}
+      y={object.positionY}
+      draggable={selected}
+      onClick={onClick}
+      onDblClick={onDoubleClick}
+      onDragEnd={(event) => onDragEnd(event.target.x(), event.target.y())}
+    >
+      <Rect
+        width={object.width ?? 180}
+        height={object.height ?? 120}
+        fill="#fff"
+        stroke={selected ? '#3b82f6' : '#94a3b8'}
+        strokeWidth={selected ? 2 : 1}
+      />
+      {image ? (
+        <KonvaImage image={image} width={object.width ?? 180} height={object.height ?? 120} />
+      ) : (
+        <Text
+          text="Image"
+          width={object.width ?? 180}
+          height={object.height ?? 120}
+          align="center"
+          verticalAlign="middle"
+          fill="#64748b"
+        />
+      )}
+    </Group>
+  );
+}
+
+export function ContextCanvas({ pageId, onObjectDoubleClick }: Props) {
   const roRef = useRef<ResizeObserver | null>(null);
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
-  const [drawPreview, setDrawPreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [drawPreview, setDrawPreview] = useState<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
   const [pendingStart, setPendingStart] = useState<EndpointHit | null>(null);
   const [connectPointer, setConnectPointer] = useState<{ x: number; y: number } | null>(null);
   const [freehandPts, setFreehandPts] = useState<number[] | null>(null);
   const [hoverHit, setHoverHit] = useState<{ shapeId: string; x: number; y: number } | null>(null);
   const [draggingEndpoint, setDraggingEndpoint] = useState(false);
   const [resizeDraft, setResizeDraft] = useState<ResizeDraft | null>(null);
+  const panStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const didPan = useRef(false);
+  const pictureInput = useRef<HTMLInputElement>(null);
+  const attachmentInput = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useCanvasObjects(pageId);
   const createObj = useCreateObject(pageId);
@@ -117,9 +196,51 @@ export function ContextCanvas({ pageId }: Props) {
   useEffect(() => () => roRef.current?.disconnect(), []);
 
   useEffect(() => {
+    const openPicker = (event: Event) => {
+      const kind = (event as CustomEvent<'picture' | 'attachment'>).detail;
+      (kind === 'picture' ? pictureInput : attachmentInput).current?.click();
+    };
+    window.addEventListener('context:add-file', openPicker);
+    return () => window.removeEventListener('context:add-file', openPicker);
+  }, []);
+
+  function addFile(file: File, type: 'picture' | 'attachment') {
+    const reader = new FileReader();
+    reader.onload = () =>
+      createObj.mutate({
+        type,
+        positionX: (-panX + size.width / 2) / zoom - 90,
+        positionY: (-panY + size.height / 2) / zoom - 60,
+        width: 180,
+        height: type === 'picture' ? 120 : 56,
+        name: file.name,
+        metadata: { dataUrl: reader.result, mimeType: file.type, sizeBytes: file.size },
+      });
+    reader.readAsDataURL(file);
+  }
+
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const file = [...(event.clipboardData?.files ?? [])].find((item) =>
+        item.type.startsWith('image/'),
+      );
+      if (file) {
+        event.preventDefault();
+        addFile(file, 'picture');
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  });
+
+  useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+        if (
+          document.activeElement?.tagName === 'INPUT' ||
+          document.activeElement?.tagName === 'TEXTAREA'
+        )
+          return;
         selectedIds.forEach((id) => deleteObj.mutate(id));
         clearSelection();
       }
@@ -152,12 +273,10 @@ export function ContextCanvas({ pageId }: Props) {
   const connectors = objects.filter((o) => o.type === 'connector');
   const objMap = new Map(objects.map((o) => [o.id, o]));
 
-  const stageDraggable = tool === 'select' || tool === 'pan';
   const cursor = tool === 'shape' || tool === 'connector' ? 'crosshair' : 'default';
 
-  const selectedShape = selectedIds.length === 1
-    ? shapes.find((s) => s.id === selectedIds[0]) ?? null
-    : null;
+  const selectedShape =
+    selectedIds.length === 1 ? (shapes.find((s) => s.id === selectedIds[0]) ?? null) : null;
 
   // While resizing, render the shape from the draft instead of the DB values
   function shapeBox(o: CanvasObject): { x: number; y: number; w: number; h: number } {
@@ -171,7 +290,13 @@ export function ContextCanvas({ pageId }: Props) {
   // or on empty canvas (free point).
   function hitEndpoint(px: number, py: number): EndpointHit {
     const target = [...shapes].reverse().find((o) => containsPoint(o, px, py, HIT_PAD));
-    if (target) return { objectId: target.id, anchor: nearestAnchor(target, px, py, kindOf(target)), x: px, y: py };
+    if (target)
+      return {
+        objectId: target.id,
+        anchor: nearestAnchor(target, px, py, kindOf(target)),
+        x: px,
+        y: py,
+      };
     return { objectId: null, anchor: null, x: px, y: py };
   }
 
@@ -184,9 +309,18 @@ export function ContextCanvas({ pageId }: Props) {
     if (!pendingStart) return;
     const end = hitEndpoint(px, py);
     createConn.mutate({
-      source: { objectId: pendingStart.objectId, anchor: pendingStart.anchor, point: { x: pendingStart.x, y: pendingStart.y } },
+      source: {
+        objectId: pendingStart.objectId,
+        anchor: pendingStart.anchor,
+        point: { x: pendingStart.x, y: pendingStart.y },
+      },
       target: { objectId: end.objectId, anchor: end.anchor, point: { x: end.x, y: end.y } },
-      metadata: { pathKind: activeConnectorKind, lineStyle: 'solid', startCap: 'none', endCap: 'arrow' },
+      metadata: {
+        pathKind: activeConnectorKind,
+        lineStyle: 'solid',
+        startCap: 'none',
+        endCap: 'arrow',
+      },
     });
     setPendingStart(null);
     setConnectPointer(null);
@@ -197,6 +331,13 @@ export function ContextCanvas({ pageId }: Props) {
   function handleMouseDown(e: any) {
     const stage = e.target.getStage();
     const pos = stage.getRelativePointerPosition();
+
+    if (tool === 'select' && e.target === stage) {
+      const screen = stage.getPointerPosition();
+      panStart.current = { x: screen.x, y: screen.y, panX, panY };
+      didPan.current = false;
+      return;
+    }
 
     if (tool === 'shape') {
       if (e.target !== stage) return;
@@ -220,6 +361,15 @@ export function ContextCanvas({ pageId }: Props) {
   function handleMouseMove(e: any) {
     const stage = e.target.getStage();
 
+    if (panStart.current) {
+      const screen = stage.getPointerPosition();
+      const dx = screen.x - panStart.current.x;
+      const dy = screen.y - panStart.current.y;
+      if (Math.hypot(dx, dy) > 3) didPan.current = true;
+      setPan(panStart.current.panX + dx, panStart.current.panY + dy);
+      return;
+    }
+
     if (tool === 'shape' && drawStart) {
       const pos = stage.getRelativePointerPosition();
       setDrawPreview({
@@ -242,6 +392,11 @@ export function ContextCanvas({ pageId }: Props) {
   function handleMouseUp(e: any) {
     const stage = e.target.getStage();
 
+    if (panStart.current) {
+      panStart.current = null;
+      return;
+    }
+
     if (tool === 'connector') {
       const pos = stage.getRelativePointerPosition();
 
@@ -252,9 +407,19 @@ export function ContextCanvas({ pageId }: Props) {
           const start = hitEndpoint(pts[0]!, pts[1]!);
           const end = hitEndpoint(pts[pts.length - 2]!, pts[pts.length - 1]!);
           createConn.mutate({
-            source: { objectId: start.objectId, anchor: start.anchor, point: { x: start.x, y: start.y } },
+            source: {
+              objectId: start.objectId,
+              anchor: start.anchor,
+              point: { x: start.x, y: start.y },
+            },
             target: { objectId: end.objectId, anchor: end.anchor, point: { x: end.x, y: end.y } },
-            metadata: { pathKind: 'freehand', freehandPoints: pts, lineStyle: 'solid', startCap: 'none', endCap: 'arrow' },
+            metadata: {
+              pathKind: 'freehand',
+              freehandPoints: pts,
+              lineStyle: 'solid',
+              startCap: 'none',
+              endCap: 'arrow',
+            },
           });
           setHoverHit(null);
           setTool('select');
@@ -302,6 +467,10 @@ export function ContextCanvas({ pageId }: Props) {
 
   function handleStageClick(e: any) {
     if (tool === 'shape' || tool === 'connector') return;
+    if (didPan.current) {
+      didPan.current = false;
+      return;
+    }
     const stage = e.target.getStage();
     if (e.target === stage || e.target.getParent() === stage.findOne('Layer')) {
       clearSelection();
@@ -321,10 +490,7 @@ export function ContextCanvas({ pageId }: Props) {
     const newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy;
     const clamped = Math.min(4, Math.max(0.1, newScale));
     setZoom(clamped);
-    setPan(
-      pointer.x - mousePointTo.x * clamped,
-      pointer.y - mousePointTo.y * clamped,
-    );
+    setPan(pointer.x - mousePointTo.x * clamped, pointer.y - mousePointTo.y * clamped);
   }
 
   function handleObjectClick(obj: CanvasObject, e: any) {
@@ -342,10 +508,16 @@ export function ContextCanvas({ pageId }: Props) {
     const end = hitEndpoint(x, y);
     const md = (conn.metadata as any) ?? {};
     if (side === 'source') {
-      updateAnchorM.mutate({ connectorId: conn.id, patch: { sourceObjectId: end.objectId, sourceAnchor: end.anchor } });
+      updateAnchorM.mutate({
+        connectorId: conn.id,
+        patch: { sourceObjectId: end.objectId, sourceAnchor: end.anchor },
+      });
       updateObj.mutate({ id: conn.id, patch: { metadata: { ...md, sourcePoint: { x, y } } } });
     } else {
-      updateAnchorM.mutate({ connectorId: conn.id, patch: { targetObjectId: end.objectId, targetAnchor: end.anchor } });
+      updateAnchorM.mutate({
+        connectorId: conn.id,
+        patch: { targetObjectId: end.objectId, targetAnchor: end.anchor },
+      });
       updateObj.mutate({ id: conn.id, patch: { metadata: { ...md, targetPoint: { x, y } } } });
     }
   }
@@ -355,7 +527,10 @@ export function ContextCanvas({ pageId }: Props) {
     const oy = obj.positionY;
     const ow = obj.width ?? DEFAULT_W;
     const oh = obj.height ?? DEFAULT_H;
-    let x = ox, y = oy, w = ow, h = oh;
+    let x = ox,
+      y = oy,
+      w = ow,
+      h = oh;
     if (corner === 'br') {
       w = Math.max(MIN_SIZE, kx - ox);
       h = Math.max(MIN_SIZE, ky - oy);
@@ -391,14 +566,14 @@ export function ContextCanvas({ pageId }: Props) {
     const tgtRef: [number, number] = tgt ? objCenter(tgt) : [tp!.x, tp!.y];
 
     const [sx, sy] = src
-      ? (anchor?.sourceAnchor && anchor.sourceAnchor !== 'center'
-          ? anchorPoint(src, anchor.sourceAnchor, kindOf(src))
-          : borderPoint(src, tgtRef[0], tgtRef[1]))
+      ? anchor?.sourceAnchor && anchor.sourceAnchor !== 'center'
+        ? anchorPoint(src, anchor.sourceAnchor, kindOf(src))
+        : borderPoint(src, tgtRef[0], tgtRef[1])
       : [sp!.x, sp!.y];
     const [tx, ty] = tgt
-      ? (anchor?.targetAnchor && anchor.targetAnchor !== 'center'
-          ? anchorPoint(tgt, anchor.targetAnchor, kindOf(tgt))
-          : borderPoint(tgt, srcRef[0], srcRef[1]))
+      ? anchor?.targetAnchor && anchor.targetAnchor !== 'center'
+        ? anchorPoint(tgt, anchor.targetAnchor, kindOf(tgt))
+        : borderPoint(tgt, srcRef[0], srcRef[1])
       : [tp!.x, tp!.y];
 
     const style = resolveConnStyle(md);
@@ -408,12 +583,14 @@ export function ContextCanvas({ pageId }: Props) {
     // Curved and elbow connectors leave/enter perpendicular to the shape edge
     let pts: number[];
     if (isCurved || isElbow) {
-      const [snx, sny] = src && anchor?.sourceAnchor && anchor.sourceAnchor !== 'center'
-        ? outwardNormal(src, anchor.sourceAnchor, kindOf(src))
-        : unitTowards(sx, sy, tx, ty);
-      const [tnx, tny] = tgt && anchor?.targetAnchor && anchor.targetAnchor !== 'center'
-        ? outwardNormal(tgt, anchor.targetAnchor, kindOf(tgt))
-        : unitTowards(tx, ty, sx, sy);
+      const [snx, sny] =
+        src && anchor?.sourceAnchor && anchor.sourceAnchor !== 'center'
+          ? outwardNormal(src, anchor.sourceAnchor, kindOf(src))
+          : unitTowards(sx, sy, tx, ty);
+      const [tnx, tny] =
+        tgt && anchor?.targetAnchor && anchor.targetAnchor !== 'center'
+          ? outwardNormal(tgt, anchor.targetAnchor, kindOf(tgt))
+          : unitTowards(tx, ty, sx, sy);
       pts = isCurved
         ? curvedPoints(sx, sy, snx, sny, tx, ty, tnx, tny)
         : elbowPoints(sx, sy, snx, sny, tx, ty, tnx, tny);
@@ -429,18 +606,29 @@ export function ContextCanvas({ pageId }: Props) {
     }
 
     const isSelected = selectedIds.includes(conn.id);
-    return [{
-      conn, pts, sx, sy, tx, ty, style, isSelected, isCurved,
-      color: isSelected ? '#3b82f6' : '#64748b',
-      curvy: style.pathKind === 'freehand',
-      fontSize: (md.fontSize as number | undefined) ?? 10,
-    }];
+    return [
+      {
+        conn,
+        pts,
+        sx,
+        sy,
+        tx,
+        ty,
+        style,
+        isSelected,
+        isCurved,
+        color: isSelected ? '#3b82f6' : '#64748b',
+        curvy: style.pathKind === 'freehand',
+        fontSize: (md.fontSize as number | undefined) ?? 10,
+      },
+    ];
   });
 
   // Hovered shape whose anchor dots should be visible
-  const hoverShape = hoverHit && (tool === 'connector' || draggingEndpoint)
-    ? shapes.find((s) => s.id === hoverHit.shapeId) ?? null
-    : null;
+  const hoverShape =
+    hoverHit && (tool === 'connector' || draggingEndpoint)
+      ? (shapes.find((s) => s.id === hoverHit.shapeId) ?? null)
+      : null;
 
   return (
     <div ref={setContainer} className="flex-1 overflow-hidden bg-slate-100" style={{ cursor }}>
@@ -451,64 +639,122 @@ export function ContextCanvas({ pageId }: Props) {
         scaleY={zoom}
         x={panX}
         y={panY}
-        draggable={stageDraggable}
+        draggable={false}
         onClick={handleStageClick}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
-        onDragEnd={(e: any) => {
-          // Shape/handle drags bubble up here too — only pan when the
-          // STAGE itself was dragged, otherwise the whole canvas jumps.
-          if (e.target === e.target.getStage()) setPan(e.target.x(), e.target.y());
-        }}
       >
         <Layer>
           {/* Connector lines + labels */}
-          {connGeo.map(({ conn, pts, sx, sy, tx, ty, style, isSelected, isCurved, curvy, color, fontSize }) => {
-            const mx = (sx + tx) / 2;
-            const my = (sy + ty) / 2;
-            return (
-              <Group key={conn.id}>
-                <Arrow
-                  points={pts}
-                  bezier={isCurved}
-                  tension={curvy ? 0.5 : 0}
-                  stroke={color}
-                  strokeWidth={isSelected ? 2 : 1.5}
-                  fill={color}
-                  dash={style.lineStyle === 'dashed' ? [8, 4] : undefined}
-                  pointerLength={8}
-                  pointerWidth={7}
-                  pointerAtBeginning={style.startCap === 'arrow'}
-                  pointerAtEnding={style.endCap === 'arrow'}
-                  hitStrokeWidth={12}
-                  onClick={(e: any) => { e.cancelBubble = true; setSelection([conn.id]); }}
-                />
-                {conn.name && (
-                  <Label
-                    x={mx}
-                    y={my}
-                    offsetX={(conn.name.length * fontSize * 0.5 + 6) / 2}
-                    offsetY={fontSize / 2 + 3}
-                    listening={false}
-                  >
-                    <Tag fill="#ffffff" stroke="#e2e8f0" strokeWidth={0.5} cornerRadius={2} />
-                    <Text
-                      text={conn.name}
-                      fontSize={fontSize}
-                      fontFamily="Inter, system-ui, sans-serif"
-                      fill={color}
-                      padding={3}
-                    />
-                  </Label>
-                )}
-              </Group>
-            );
-          })}
+          {connGeo.map(
+            ({
+              conn,
+              pts,
+              sx,
+              sy,
+              tx,
+              ty,
+              style,
+              isSelected,
+              isCurved,
+              curvy,
+              color,
+              fontSize,
+            }) => {
+              const mx = (sx + tx) / 2;
+              const my = (sy + ty) / 2;
+              return (
+                <Group key={conn.id}>
+                  <Arrow
+                    points={pts}
+                    bezier={isCurved}
+                    tension={curvy ? 0.5 : 0}
+                    stroke={color}
+                    strokeWidth={isSelected ? 2 : 1.5}
+                    fill={color}
+                    dash={style.lineStyle === 'dashed' ? [8, 4] : undefined}
+                    pointerLength={8}
+                    pointerWidth={7}
+                    pointerAtBeginning={style.startCap === 'arrow'}
+                    pointerAtEnding={style.endCap === 'arrow'}
+                    hitStrokeWidth={12}
+                    onClick={(e: any) => {
+                      e.cancelBubble = true;
+                      setSelection([conn.id]);
+                    }}
+                    onDblClick={(e: any) => {
+                      e.cancelBubble = true;
+                      onObjectDoubleClick?.(conn);
+                    }}
+                  />
+                  {conn.name && (
+                    <Label
+                      x={mx}
+                      y={my}
+                      offsetX={(conn.name.length * fontSize * 0.5 + 6) / 2}
+                      offsetY={fontSize / 2 + 3}
+                      listening={false}
+                    >
+                      <Tag fill="#ffffff" stroke="#e2e8f0" strokeWidth={0.5} cornerRadius={2} />
+                      <Text
+                        text={conn.name}
+                        fontSize={fontSize}
+                        fontFamily="Inter, system-ui, sans-serif"
+                        fill={color}
+                        padding={3}
+                      />
+                    </Label>
+                  )}
+                </Group>
+              );
+            },
+          )}
 
           {/* Shapes — draggable only when already selected */}
           {shapes.map((obj) => {
+            if (obj.type === 'picture')
+              return (
+                <PictureNode
+                  key={obj.id}
+                  object={obj}
+                  selected={selectedIds.includes(obj.id)}
+                  onClick={(e) => handleObjectClick(obj, e)}
+                  onDoubleClick={() => onObjectDoubleClick?.(obj)}
+                  onDragEnd={(x, y) => handleDragEnd(obj.id, x, y)}
+                />
+              );
+            if (obj.type === 'attachment')
+              return (
+                <Group
+                  key={obj.id}
+                  x={obj.positionX}
+                  y={obj.positionY}
+                  draggable={tool === 'select' && selectedIds.includes(obj.id)}
+                  onClick={(e) => handleObjectClick(obj, e)}
+                  onDblClick={() => onObjectDoubleClick?.(obj)}
+                  onDragEnd={(e) => handleDragEnd(obj.id, e.target.x(), e.target.y())}
+                >
+                  <Rect
+                    width={obj.width ?? 180}
+                    height={obj.height ?? 56}
+                    cornerRadius={6}
+                    fill="#fff"
+                    stroke={selectedIds.includes(obj.id) ? '#3b82f6' : '#94a3b8'}
+                    strokeWidth={selectedIds.includes(obj.id) ? 2 : 1}
+                  />
+                  <Text
+                    text={`Attachment\n${obj.name ?? 'Untitled file'}`}
+                    x={12}
+                    y={9}
+                    width={(obj.width ?? 180) - 24}
+                    fontSize={11}
+                    lineHeight={1.5}
+                    fill="#334155"
+                  />
+                </Group>
+              );
             const b = shapeBox(obj);
             return (
               <ShapeNode
@@ -524,44 +770,83 @@ export function ContextCanvas({ pageId }: Props) {
                 draggable={tool === 'select' && selectedIds.includes(obj.id) && !resizeDraft}
                 onDragEnd={(x, y) => handleDragEnd(obj.id, x, y)}
                 onClick={(e: any) => handleObjectClick(obj, e)}
+                onDoubleClick={() => onObjectDoubleClick?.(obj)}
                 fontSize={((obj.metadata as any)?.fontSize as number | undefined) ?? 11}
               />
             );
           })}
 
           {/* Preview while placing a connector */}
-          {tool === 'connector' && pendingStart && connectPointer && (() => {
-            let pts: number[];
-            let bezier = false;
-            if (activeConnectorKind === 'curved' || activeConnectorKind === 'elbow') {
-              const sObj = pendingStart.objectId ? objMap.get(pendingStart.objectId) : undefined;
-              const [snx, sny] = sObj && pendingStart.anchor && pendingStart.anchor !== 'center'
-                ? outwardNormal(sObj, pendingStart.anchor, kindOf(sObj))
-                : unitTowards(pendingStart.x, pendingStart.y, connectPointer.x, connectPointer.y);
-              const [tnx, tny] = unitTowards(connectPointer.x, connectPointer.y, pendingStart.x, pendingStart.y);
-              if (activeConnectorKind === 'curved') {
-                pts = curvedPoints(pendingStart.x, pendingStart.y, snx, sny, connectPointer.x, connectPointer.y, tnx, tny);
-                bezier = true;
+          {tool === 'connector' &&
+            pendingStart &&
+            connectPointer &&
+            (() => {
+              let pts: number[];
+              let bezier = false;
+              if (activeConnectorKind === 'curved' || activeConnectorKind === 'elbow') {
+                const sObj = pendingStart.objectId ? objMap.get(pendingStart.objectId) : undefined;
+                const [snx, sny] =
+                  sObj && pendingStart.anchor && pendingStart.anchor !== 'center'
+                    ? outwardNormal(sObj, pendingStart.anchor, kindOf(sObj))
+                    : unitTowards(
+                        pendingStart.x,
+                        pendingStart.y,
+                        connectPointer.x,
+                        connectPointer.y,
+                      );
+                const [tnx, tny] = unitTowards(
+                  connectPointer.x,
+                  connectPointer.y,
+                  pendingStart.x,
+                  pendingStart.y,
+                );
+                if (activeConnectorKind === 'curved') {
+                  pts = curvedPoints(
+                    pendingStart.x,
+                    pendingStart.y,
+                    snx,
+                    sny,
+                    connectPointer.x,
+                    connectPointer.y,
+                    tnx,
+                    tny,
+                  );
+                  bezier = true;
+                } else {
+                  pts = elbowPoints(
+                    pendingStart.x,
+                    pendingStart.y,
+                    snx,
+                    sny,
+                    connectPointer.x,
+                    connectPointer.y,
+                    tnx,
+                    tny,
+                  );
+                }
               } else {
-                pts = elbowPoints(pendingStart.x, pendingStart.y, snx, sny, connectPointer.x, connectPointer.y, tnx, tny);
+                pts = pathPoints(
+                  activeConnectorKind,
+                  pendingStart.x,
+                  pendingStart.y,
+                  connectPointer.x,
+                  connectPointer.y,
+                );
               }
-            } else {
-              pts = pathPoints(activeConnectorKind, pendingStart.x, pendingStart.y, connectPointer.x, connectPointer.y);
-            }
-            return (
-              <Arrow
-                points={pts}
-                bezier={bezier}
-                stroke="#3b82f6"
-                strokeWidth={1.5}
-                fill="#3b82f6"
-                dash={[6, 3]}
-                pointerLength={8}
-                pointerWidth={7}
-                listening={false}
-              />
-            );
-          })()}
+              return (
+                <Arrow
+                  points={pts}
+                  bezier={bezier}
+                  stroke="#3b82f6"
+                  strokeWidth={1.5}
+                  fill="#3b82f6"
+                  dash={[6, 3]}
+                  pointerLength={8}
+                  pointerWidth={7}
+                  listening={false}
+                />
+              );
+            })()}
 
           {/* Preview while drawing a freehand connector */}
           {freehandPts && freehandPts.length >= 4 && (
@@ -591,95 +876,141 @@ export function ContextCanvas({ pageId }: Props) {
           )}
 
           {/* Resize knobs for the selected shape */}
-          {tool === 'select' && selectedShape && (() => {
-            const b = shapeBox(selectedShape);
-            const corners = [
-              { k: 'tl', x: b.x, y: b.y },
-              { k: 'tr', x: b.x + b.w, y: b.y },
-              { k: 'bl', x: b.x, y: b.y + b.h },
-              { k: 'br', x: b.x + b.w, y: b.y + b.h },
-            ];
-            return corners.map((c) => (
-              <Rect
-                key={c.k}
-                x={c.x - 4}
-                y={c.y - 4}
-                width={8}
-                height={8}
-                fill="#ffffff"
-                stroke="#3b82f6"
-                strokeWidth={1.5}
-                draggable
-                onMouseDown={(e: any) => { e.cancelBubble = true; }}
-                onDragMove={(e: any) => {
-                  setResizeDraft(computeResize(selectedShape, c.k, e.target.x() + 4, e.target.y() + 4));
-                }}
-                onDragEnd={(e: any) => {
-                  e.cancelBubble = true;
-                  const r = computeResize(selectedShape, c.k, e.target.x() + 4, e.target.y() + 4);
-                  updateObj.mutate({ id: selectedShape.id, patch: { positionX: r.x, positionY: r.y, width: r.w, height: r.h } });
-                  setResizeDraft(null);
-                }}
-              />
-            ));
-          })()}
-
-          {/* Anchor dots on the hovered shape — always on top */}
-          {hoverShape && (() => {
-            const kind = kindOf(hoverShape);
-            const snapped = nearestAnchor(hoverShape, hoverHit!.x, hoverHit!.y, kind);
-            return anchorsFor(kind).map((a) => {
-              const [ax, ay] = anchorPoint(hoverShape, a, kind);
-              return (
-                <Circle
-                  key={hoverShape.id + ':' + a}
-                  x={ax}
-                  y={ay}
-                  radius={4}
-                  fill={a === snapped ? '#3b82f6' : '#ffffff'}
+          {tool === 'select' &&
+            selectedShape &&
+            (() => {
+              const b = shapeBox(selectedShape);
+              const corners = [
+                { k: 'tl', x: b.x, y: b.y },
+                { k: 'tr', x: b.x + b.w, y: b.y },
+                { k: 'bl', x: b.x, y: b.y + b.h },
+                { k: 'br', x: b.x + b.w, y: b.y + b.h },
+              ];
+              return corners.map((c) => (
+                <Rect
+                  key={c.k}
+                  x={c.x - 4}
+                  y={c.y - 4}
+                  width={8}
+                  height={8}
+                  fill="#ffffff"
                   stroke="#3b82f6"
                   strokeWidth={1.5}
-                  listening={false}
+                  draggable
+                  onMouseDown={(e: any) => {
+                    e.cancelBubble = true;
+                  }}
+                  onDragMove={(e: any) => {
+                    setResizeDraft(
+                      computeResize(selectedShape, c.k, e.target.x() + 4, e.target.y() + 4),
+                    );
+                  }}
+                  onDragEnd={(e: any) => {
+                    e.cancelBubble = true;
+                    const r = computeResize(selectedShape, c.k, e.target.x() + 4, e.target.y() + 4);
+                    updateObj.mutate({
+                      id: selectedShape.id,
+                      patch: { positionX: r.x, positionY: r.y, width: r.w, height: r.h },
+                    });
+                    setResizeDraft(null);
+                  }}
                 />
-              );
-            });
-          })()}
+              ));
+            })()}
+
+          {/* Anchor dots on the hovered shape — always on top */}
+          {hoverShape &&
+            (() => {
+              const kind = kindOf(hoverShape);
+              const snapped = nearestAnchor(hoverShape, hoverHit!.x, hoverHit!.y, kind);
+              return anchorsFor(kind).map((a) => {
+                const [ax, ay] = anchorPoint(hoverShape, a, kind);
+                return (
+                  <Circle
+                    key={hoverShape.id + ':' + a}
+                    x={ax}
+                    y={ay}
+                    radius={4}
+                    fill={a === snapped ? '#3b82f6' : '#ffffff'}
+                    stroke="#3b82f6"
+                    strokeWidth={1.5}
+                    listening={false}
+                  />
+                );
+              });
+            })()}
 
           {/* Endpoint handles of the selected connector — always on top */}
-          {tool === 'select' && connGeo.filter((g) => g.isSelected).map(({ conn, sx, sy, tx, ty }) => (
-            <Group key={conn.id + ':handles'}>
-              <Circle
-                x={sx} y={sy} radius={5}
-                fill="#ffffff" stroke="#3b82f6" strokeWidth={1.5}
-                draggable
-                onMouseDown={(e: any) => { e.cancelBubble = true; }}
-                onDragStart={() => setDraggingEndpoint(true)}
-                onDragMove={(e: any) => updateHover(e.target.x(), e.target.y())}
-                onDragEnd={(e: any) => {
-                  e.cancelBubble = true;
-                  setDraggingEndpoint(false);
-                  setHoverHit(null);
-                  handleEndpointDrag(conn, 'source', e.target.x(), e.target.y());
-                }}
-              />
-              <Circle
-                x={tx} y={ty} radius={5}
-                fill="#ffffff" stroke="#3b82f6" strokeWidth={1.5}
-                draggable
-                onMouseDown={(e: any) => { e.cancelBubble = true; }}
-                onDragStart={() => setDraggingEndpoint(true)}
-                onDragMove={(e: any) => updateHover(e.target.x(), e.target.y())}
-                onDragEnd={(e: any) => {
-                  e.cancelBubble = true;
-                  setDraggingEndpoint(false);
-                  setHoverHit(null);
-                  handleEndpointDrag(conn, 'target', e.target.x(), e.target.y());
-                }}
-              />
-            </Group>
-          ))}
+          {tool === 'select' &&
+            connGeo
+              .filter((g) => g.isSelected)
+              .map(({ conn, sx, sy, tx, ty }) => (
+                <Group key={conn.id + ':handles'}>
+                  <Circle
+                    x={sx}
+                    y={sy}
+                    radius={5}
+                    fill="#ffffff"
+                    stroke="#3b82f6"
+                    strokeWidth={1.5}
+                    draggable
+                    onMouseDown={(e: any) => {
+                      e.cancelBubble = true;
+                    }}
+                    onDragStart={() => setDraggingEndpoint(true)}
+                    onDragMove={(e: any) => updateHover(e.target.x(), e.target.y())}
+                    onDragEnd={(e: any) => {
+                      e.cancelBubble = true;
+                      setDraggingEndpoint(false);
+                      setHoverHit(null);
+                      handleEndpointDrag(conn, 'source', e.target.x(), e.target.y());
+                    }}
+                  />
+                  <Circle
+                    x={tx}
+                    y={ty}
+                    radius={5}
+                    fill="#ffffff"
+                    stroke="#3b82f6"
+                    strokeWidth={1.5}
+                    draggable
+                    onMouseDown={(e: any) => {
+                      e.cancelBubble = true;
+                    }}
+                    onDragStart={() => setDraggingEndpoint(true)}
+                    onDragMove={(e: any) => updateHover(e.target.x(), e.target.y())}
+                    onDragEnd={(e: any) => {
+                      e.cancelBubble = true;
+                      setDraggingEndpoint(false);
+                      setHoverHit(null);
+                      handleEndpointDrag(conn, 'target', e.target.x(), e.target.y());
+                    }}
+                  />
+                </Group>
+              ))}
         </Layer>
       </Stage>
+      <input
+        ref={pictureInput}
+        className="hidden"
+        type="file"
+        accept="image/*"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) addFile(f, 'picture');
+          e.target.value = '';
+        }}
+      />
+      <input
+        ref={attachmentInput}
+        className="hidden"
+        type="file"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) addFile(f, 'attachment');
+          e.target.value = '';
+        }}
+      />
     </div>
   );
 }
