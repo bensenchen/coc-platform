@@ -47,9 +47,10 @@ interface Props {
   pageId: string;
   onFitView?: () => void;
   onAddFile?: (kind: 'picture' | 'attachment') => void;
+  structureLocked?: boolean;
 }
 
-export function ToolBar({ pageId, onFitView, onAddFile }: Props) {
+export function ToolBar({ pageId, onFitView, onAddFile, structureLocked = false }: Props) {
   const {
     tool,
     setTool,
@@ -87,60 +88,64 @@ export function ToolBar({ pageId, onFitView, onAddFile }: Props) {
   return (
     <div className="flex items-center gap-0.5 px-3 py-1.5 bg-white border-b border-slate-200 text-xs select-none">
       {btn('select', <MousePointer2 size={14} />, 'Select')}
-      <Menu
-        align="left"
-        trigger={
-          <button
-            className={cn(
-              'ml-1 flex items-center gap-1 rounded px-2 py-1.5 font-medium',
-              tool !== 'select' ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:bg-slate-100',
-            )}
-          >
-            <Plus size={14} /> Add object
-          </button>
-        }
-      >
-        <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-          Shapes
-        </div>
-        {SHAPES.map(({ kind, label, icon }) => (
-          <MenuItem key={kind} onClick={() => setActiveShapeKind(kind)}>
-            <span className="flex items-center gap-2">
-              {icon}
-              {label}
-            </span>
-          </MenuItem>
-        ))}
-        <div className="my-1 border-t border-slate-100" />
-        <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-          Connectors
-        </div>
-        {CONNECTORS.map(({ kind, label, icon }) => (
-          <MenuItem key={kind} onClick={() => setActiveConnectorKind(kind)}>
-            <span className="flex items-center gap-2">
-              {icon}
-              {label}
-            </span>
-          </MenuItem>
-        ))}
-        {onAddFile && (
-          <>
-            <div className="my-1 border-t border-slate-100" />
-            <MenuItem onClick={() => onAddFile('picture')}>
+      {!structureLocked && (
+        <Menu
+          align="left"
+          trigger={
+            <button
+              className={cn(
+                'ml-1 flex items-center gap-1 rounded px-2 py-1.5 font-medium',
+                tool !== 'select'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-slate-600 hover:bg-slate-100',
+              )}
+            >
+              <Plus size={14} /> Add object
+            </button>
+          }
+        >
+          <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Shapes
+          </div>
+          {SHAPES.map(({ kind, label, icon }) => (
+            <MenuItem key={kind} onClick={() => setActiveShapeKind(kind)}>
               <span className="flex items-center gap-2">
-                <Image size={14} />
-                Image…
+                {icon}
+                {label}
               </span>
             </MenuItem>
-            <MenuItem onClick={() => onAddFile('attachment')}>
+          ))}
+          <div className="my-1 border-t border-slate-100" />
+          <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Connectors
+          </div>
+          {CONNECTORS.map(({ kind, label, icon }) => (
+            <MenuItem key={kind} onClick={() => setActiveConnectorKind(kind)}>
               <span className="flex items-center gap-2">
-                <Paperclip size={14} />
-                Attachment…
+                {icon}
+                {label}
               </span>
             </MenuItem>
-          </>
-        )}
-      </Menu>
+          ))}
+          {onAddFile && (
+            <>
+              <div className="my-1 border-t border-slate-100" />
+              <MenuItem onClick={() => onAddFile('picture')}>
+                <span className="flex items-center gap-2">
+                  <Image size={14} />
+                  Image…
+                </span>
+              </MenuItem>
+              <MenuItem onClick={() => onAddFile('attachment')}>
+                <span className="flex items-center gap-2">
+                  <Paperclip size={14} />
+                  Attachment…
+                </span>
+              </MenuItem>
+            </>
+          )}
+        </Menu>
+      )}
 
       <div className="w-px h-5 bg-slate-200 mx-1" />
 
@@ -173,7 +178,7 @@ export function ToolBar({ pageId, onFitView, onAddFile }: Props) {
 
       <div className="flex-1" />
 
-      {selectedIds.length > 0 && (
+      {!structureLocked && selectedIds.length > 0 && (
         <button
           title="Delete selected"
           onClick={handleDelete}
