@@ -36,6 +36,7 @@ const HIT_PAD = 8;
 interface Props {
   pageId: string;
   onObjectDoubleClick?: (object: CanvasObject) => void;
+  structureLocked?: boolean;
 }
 
 interface EndpointHit {
@@ -132,7 +133,7 @@ function PictureNode({
   );
 }
 
-export function ContextCanvas({ pageId, onObjectDoubleClick }: Props) {
+export function ContextCanvas({ pageId, onObjectDoubleClick, structureLocked = false }: Props) {
   const roRef = useRef<ResizeObserver | null>(null);
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
@@ -235,7 +236,7 @@ export function ContextCanvas({ pageId, onObjectDoubleClick }: Props) {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (!structureLocked && (e.key === 'Delete' || e.key === 'Backspace')) {
         if (
           document.activeElement?.tagName === 'INPUT' ||
           document.activeElement?.tagName === 'TEXTAREA'
@@ -257,7 +258,7 @@ export function ContextCanvas({ pageId, onObjectDoubleClick }: Props) {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedIds, deleteObj, clearSelection]);
+  }, [selectedIds, deleteObj, clearSelection, structureLocked]);
 
   if (isLoading) {
     return (
@@ -273,7 +274,8 @@ export function ContextCanvas({ pageId, onObjectDoubleClick }: Props) {
   const connectors = objects.filter((o) => o.type === 'connector');
   const objMap = new Map(objects.map((o) => [o.id, o]));
 
-  const cursor = tool === 'shape' || tool === 'connector' ? 'crosshair' : 'default';
+  const cursor =
+    !structureLocked && (tool === 'shape' || tool === 'connector') ? 'crosshair' : 'default';
 
   const selectedShape =
     selectedIds.length === 1 ? (shapes.find((s) => s.id === selectedIds[0]) ?? null) : null;
@@ -339,14 +341,14 @@ export function ContextCanvas({ pageId, onObjectDoubleClick }: Props) {
       return;
     }
 
-    if (tool === 'shape') {
+    if (!structureLocked && tool === 'shape') {
       if (e.target !== stage) return;
       setDrawStart(pos);
       setDrawPreview({ x: pos.x, y: pos.y, w: 0, h: 0 });
       return;
     }
 
-    if (tool === 'connector') {
+    if (!structureLocked && tool === 'connector') {
       if (activeConnectorKind === 'freehand') {
         setFreehandPts([pos.x, pos.y]);
       } else if (!pendingStart) {
@@ -381,7 +383,7 @@ export function ContextCanvas({ pageId, onObjectDoubleClick }: Props) {
       return;
     }
 
-    if (tool === 'connector') {
+    if (!structureLocked && tool === 'connector') {
       const pos = stage.getRelativePointerPosition();
       if (freehandPts) setFreehandPts([...freehandPts, pos.x, pos.y]);
       else if (pendingStart) setConnectPointer(pos);
@@ -397,7 +399,7 @@ export function ContextCanvas({ pageId, onObjectDoubleClick }: Props) {
       return;
     }
 
-    if (tool === 'connector') {
+    if (!structureLocked && tool === 'connector') {
       const pos = stage.getRelativePointerPosition();
 
       if (activeConnectorKind === 'freehand' && freehandPts) {
@@ -494,7 +496,7 @@ export function ContextCanvas({ pageId, onObjectDoubleClick }: Props) {
   }
 
   function handleObjectClick(obj: CanvasObject, e: any) {
-    if (tool === 'connector') return;
+    if (!structureLocked && tool === 'connector') return;
     e.cancelBubble = true;
     setSelection([obj.id]);
   }

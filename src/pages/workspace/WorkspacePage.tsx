@@ -9,6 +9,7 @@ import type { PageKind } from '@/models/page.model';
 import { ContextCanvas, ContextToolBar, PropertiesPanel } from '@/features/context-page';
 import { DataTable } from '@/features/data-page';
 import { SheetTable } from '@/features/sheet-page';
+import { InterfaceTable, IcdCanvas } from '@/features/interface-page';
 import { DomainSyncProvider } from '@/hooks/useDomainSync';
 import { SyncStatus } from '@/components/layout/SyncStatus';
 import { MoreHorizontal } from 'lucide-react';
@@ -176,14 +177,33 @@ export function WorkspacePage() {
         {(page.kind === 'context' || page.kind === 'org') && (
           <div className="flex flex-col flex-1 overflow-hidden">
             <ContextToolBar
-              pageId={page.id}
+              pageId={
+                page.kind === 'org' ? String(page.metadata.linkedContextPageId ?? page.id) : page.id
+              }
+              structureLocked={page.kind === 'org'}
               onAddFile={(kind) =>
                 window.dispatchEvent(new CustomEvent('context:add-file', { detail: kind }))
               }
             />
             <div className="flex flex-1 overflow-hidden">
-              <ContextCanvas pageId={page.id} onObjectDoubleClick={openObjectTarget} />
-              <PropertiesPanel pageId={page.id} projectId={currentProject?.id ?? null} />
+              <ContextCanvas
+                pageId={
+                  page.kind === 'org'
+                    ? String(page.metadata.linkedContextPageId ?? page.id)
+                    : page.id
+                }
+                structureLocked={page.kind === 'org'}
+                onObjectDoubleClick={openObjectTarget}
+              />
+              <PropertiesPanel
+                pageId={
+                  page.kind === 'org'
+                    ? String(page.metadata.linkedContextPageId ?? page.id)
+                    : page.id
+                }
+                projectId={currentProject?.id ?? null}
+                structureLocked={page.kind === 'org'}
+              />
             </div>
           </div>
         )}
@@ -191,6 +211,21 @@ export function WorkspacePage() {
         {page.kind === 'data' && (
           <div className="flex-1 overflow-hidden">
             <DataTable pageId={page.id} projectId={currentProject?.id ?? null} />
+          </div>
+        )}
+
+        {page.kind === 'interface_list' && currentProject && (
+          <div className="flex-1 overflow-hidden">
+            <InterfaceTable
+              projectId={currentProject.id}
+              onOpenIcd={(id) => navigate(`/w/${workspaceSlug}/p/${projectSlug}/page/${id}`)}
+            />
+          </div>
+        )}
+
+        {page.kind === 'icd' && (
+          <div className="flex-1 overflow-hidden">
+            <IcdCanvas page={page} />
           </div>
         )}
 
@@ -203,6 +238,8 @@ export function WorkspacePage() {
         {page.kind !== 'context' &&
           page.kind !== 'org' &&
           page.kind !== 'data' &&
+          page.kind !== 'interface_list' &&
+          page.kind !== 'icd' &&
           page.kind !== 'sheet' && (
             <div className="flex-1 flex items-center justify-center text-slate-400">
               <div className="text-center">

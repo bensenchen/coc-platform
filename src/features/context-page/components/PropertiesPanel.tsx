@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/Input';
 import { resolveConnStyle } from './connector-utils';
 import type { ShapeKind } from '@/models/canvas-object.model';
 import { useSheet } from '@/hooks/useSheet';
+import { useSetConnectorInterface } from '@/hooks/useInterfaces';
 import type { CanvasObject } from '@/models/canvas-object.model';
 
 function LinkedAttributes({
@@ -82,9 +83,10 @@ const SHAPE_KINDS: { kind: ShapeKind; label: string }[] = [
 interface Props {
   pageId: string;
   projectId: string | null;
+  structureLocked?: boolean;
 }
 
-export function PropertiesPanel({ pageId, projectId }: Props) {
+export function PropertiesPanel({ pageId, projectId, structureLocked = false }: Props) {
   const { selectedIds, clearSelection } = useCanvasStore();
   const { data } = useCanvasObjects(pageId);
   const selectedId = selectedIds[0] ?? null;
@@ -92,6 +94,7 @@ export function PropertiesPanel({ pageId, projectId }: Props) {
   const unlinkPhysical = useDeleteLinkedRow(physicalLink.data?.dataPageId ?? '');
   const updateObj = useUpdateObject(pageId);
   const deleteObj = useDeleteObject(pageId);
+  const setInterface = useSetConnectorInterface(pageId, projectId);
   const linkPhysical = useLinkPhysicalObject(pageId);
   const { data: pages = [] } = usePages(projectId);
   const [dataPageId, setDataPageId] = useState('');
@@ -304,7 +307,9 @@ export function PropertiesPanel({ pageId, projectId }: Props) {
             <input
               type="checkbox"
               checked={Boolean((obj.metadata as any).isInterface)}
-              onChange={(e) => setMeta({ isInterface: e.target.checked })}
+              onChange={(e) =>
+                obj && setInterface.mutate({ connectorId: obj.id, enabled: e.target.checked })
+              }
             />
             <span className="text-xs text-slate-700">Interface</span>
           </label>
@@ -386,9 +391,30 @@ export function PropertiesPanel({ pageId, projectId }: Props) {
       )}
 
       <div className="pt-2 border-t border-slate-100">
-        <Button variant="danger" size="sm" onClick={handleDelete} className="w-full">
-          Delete
-        </Button>
+        {structureLocked && isShape && (
+          <label className="block mb-3">
+            <span className="text-xs text-slate-600 mb-1 block">Parent object</span>
+            <select
+              className={selectCls}
+              value={String((obj.metadata as any).parentObjectId ?? '')}
+              onChange={(e) => setMeta({ parentObjectId: e.target.value || null })}
+            >
+              <option value="">Top level</option>
+              {(data?.objects ?? [])
+                .filter((x) => x.type === 'shape' && x.id !== obj.id)
+                .map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name || 'Unnamed'}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+        {!structureLocked && (
+          <Button variant="danger" size="sm" onClick={handleDelete} className="w-full">
+            Delete
+          </Button>
+        )}
       </div>
 
       <p className="text-[10px] text-slate-400 mt-3 font-mono truncate">{obj.id.slice(0, 12)}…</p>

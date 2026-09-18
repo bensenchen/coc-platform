@@ -5,16 +5,23 @@ import { ConcurrentModificationError } from '@/lib/concurrency';
 
 function mapPage(row: any): Page {
   return {
-    id: row.id, projectId: row.project_id, kind: row.kind,
-    title: row.title, position: row.position, metadata: row.metadata ?? {},
-    createdBy: row.created_by, createdAt: row.created_at,
-    updatedAt: row.updated_at, deletedAt: row.deleted_at,
+    id: row.id,
+    projectId: row.project_id,
+    kind: row.kind,
+    title: row.title,
+    position: row.position,
+    metadata: row.metadata ?? {},
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at,
   };
 }
 
 export async function listPages(projectId: string): Promise<Page[]> {
   const { data, error } = await supabase
-    .from('page').select('*')
+    .from('page')
+    .select('*')
     .eq('project_id', projectId)
     .is('deleted_at', null)
     .order('position', { ascending: true })
@@ -27,20 +34,33 @@ export async function createPage(
   projectId: string,
   kind: PageKind,
   title: string,
+  metadata: Record<string, unknown> = {},
 ): Promise<Page> {
   if (kind === 'interface_list') {
     const { data: existing } = await supabase
-      .from('page').select('id')
-      .eq('project_id', projectId).eq('kind', 'interface_list')
-      .is('deleted_at', null).maybeSingle();
+      .from('page')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('kind', 'interface_list')
+      .is('deleted_at', null)
+      .maybeSingle();
     if (existing) throw new Error('List of Interfaces already exists for this project');
   }
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from('page')
-    .insert({ project_id: projectId, kind, title, created_by: user?.id })
-    .select().single();
+    .insert({
+      project_id: projectId,
+      kind,
+      title,
+      metadata: metadata as Json,
+      created_by: user?.id,
+    })
+    .select()
+    .single();
   if (error) throw error;
   const page = mapPage(data);
 
@@ -49,23 +69,22 @@ export async function createPage(
       { page_id: page.id, name: 'Level', position: 0, data_type: 'text', is_default: true },
       { page_id: page.id, name: 'Name', position: 1, data_type: 'text', is_default: true },
     ]);
-  } else if (kind === 'sheet') {
-    await supabase.from('sheet_column').insert([
-      { page_id: page.id, name: 'Item', position: 0, data_type: 'text', is_default: true },
-      { page_id: page.id, name: 'Link', position: 1, data_type: 'link', is_default: true },
-    ]);
   } else if (kind === 'interface_list') {
     await supabase.from('sheet_column').insert([
       { page_id: page.id, name: 'ICD ID', position: 0, data_type: 'text', is_default: true },
-      { page_id: page.id, name: 'Source',  position: 1, data_type: 'text', is_default: true },
-      { page_id: page.id, name: 'Target',  position: 2, data_type: 'text', is_default: true },
+      { page_id: page.id, name: 'Source', position: 1, data_type: 'text', is_default: true },
+      { page_id: page.id, name: 'Target', position: 2, data_type: 'text', is_default: true },
     ]);
   }
 
   return page;
 }
 
-export async function renamePage(id: string, title: string, expectedUpdatedAt?: string): Promise<Page> {
+export async function renamePage(
+  id: string,
+  title: string,
+  expectedUpdatedAt?: string,
+): Promise<Page> {
   let query = supabase.from('page').update({ title }).eq('id', id);
   if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
   const { data, error } = await query.select().maybeSingle();
@@ -76,7 +95,9 @@ export async function renamePage(id: string, title: string, expectedUpdatedAt?: 
 
 export async function deletePage(id: string): Promise<void> {
   const { error } = await supabase
-    .from('page').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+    .from('page')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id);
   if (error) throw error;
 }
 
@@ -85,7 +106,10 @@ export async function updatePageMeta(
   metadata: Record<string, unknown>,
   expectedUpdatedAt?: string,
 ): Promise<Page> {
-  let query = supabase.from('page').update({ metadata: metadata as Json }).eq('id', id);
+  let query = supabase
+    .from('page')
+    .update({ metadata: metadata as Json })
+    .eq('id', id);
   if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
   const { data, error } = await query.select().maybeSingle();
   if (error) throw error;
