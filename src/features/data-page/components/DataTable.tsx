@@ -15,10 +15,14 @@ import {
 import type { SheetColumn } from '@/models/sheet.model';
 import { useDomainSync } from '@/hooks/useDomainSync';
 import { RichText, RichTextInput } from '@/components/ui/RichTextInput';
+import { RevisionBrowser } from '@/features/sheet-page/components/RevisionBrowser';
 
 interface Props {
   pageId: string;
   projectId: string | null;
+  workspaceId: string;
+  pageTitle: string;
+  mayEdit: boolean;
 }
 
 function moveId(ids: string[], dragId: string, targetId: string): string[] {
@@ -34,7 +38,7 @@ function moveId(ids: string[], dragId: string, targetId: string): string[] {
   return without;
 }
 
-export function DataTable({ pageId, projectId }: Props) {
+export function DataTable({ pageId, projectId, workspaceId, pageTitle, mayEdit }: Props) {
   const sync = useDomainSync();
   const { data, isLoading } = useSheet(pageId);
   const createCol = useCreateColumn(pageId);
@@ -157,6 +161,7 @@ export function DataTable({ pageId, projectId }: Props) {
       <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-200 bg-white">
         <span className="text-sm font-medium text-slate-700">Data Table</span>
         <div className="flex-1" />
+        <RevisionBrowser pageId={pageId} pageTitle={pageTitle} workspaceId={workspaceId} mayEdit={mayEdit} />
         <button
           onClick={() => setAddingRow(true)}
           className="px-3 py-1.5 text-xs font-medium rounded bg-indigo-600 text-white hover:bg-indigo-700"
