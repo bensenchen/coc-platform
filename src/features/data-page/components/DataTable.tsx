@@ -14,6 +14,7 @@ import {
 } from '@/hooks/useSheetMutations';
 import type { SheetColumn } from '@/models/sheet.model';
 import { useDomainSync } from '@/hooks/useDomainSync';
+import { RichText, RichTextInput } from '@/components/ui/RichTextInput';
 
 interface Props {
   pageId: string;
@@ -48,7 +49,6 @@ export function DataTable({ pageId, projectId }: Props) {
   const reorderRows = useReorderRows(pageId);
 
   const [editingCell, setEditingCell] = useState<{ rowId: string; colId: string } | null>(null);
-  const [cellDraft, setCellDraft] = useState('');
   const [editingColId, setEditingColId] = useState<string | null>(null);
   const [colDraft, setColDraft] = useState('');
   const [newColName, setNewColName] = useState('');
@@ -76,21 +76,8 @@ export function DataTable({ pageId, projectId }: Props) {
   const cells = data?.cells ?? {};
 
   function startCellEdit(rowId: string, colId: string) {
-    const val = cells[rowId]?.[colId];
-    setCellDraft(val == null ? '' : String(val));
     setEditingCell({ rowId, colId });
     sync.beginEditing(`sheet_cell:${rowId}:${colId}`);
-  }
-
-  function commitCellEdit() {
-    if (!editingCell) return;
-    upsertCell.mutate({
-      rowId: editingCell.rowId,
-      columnId: editingCell.colId,
-      value: cellDraft,
-    });
-    sync.endEditing(`sheet_cell:${editingCell.rowId}:${editingCell.colId}`);
-    setEditingCell(null);
   }
 
   function startColEdit(col: SheetColumn) {
@@ -452,19 +439,23 @@ export function DataTable({ pageId, projectId }: Props) {
                         onClick={() => startCellEdit(row.id, col.id)}
                       >
                         {isEditing ? (
-                          <input
-                            autoFocus
-                            value={cellDraft}
-                            onChange={(e) => setCellDraft(e.target.value)}
-                            onBlur={commitCellEdit}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') commitCellEdit();
-                              if (e.key === 'Escape') setEditingCell(null);
-                            }}
-                            className="w-full outline-none border border-indigo-400 rounded px-1 text-sm text-slate-900"
-                          />
+                          projectId ? (
+                            <RichTextInput
+                              autoFocus
+                              value={val}
+                              projectId={projectId}
+                              onCommit={(value) => {
+                                upsertCell.mutate({ rowId: row.id, columnId: col.id, value });
+                                sync.endEditing(`sheet_cell:${row.id}:${col.id}`);
+                                setEditingCell(null);
+                              }}
+                              onCancel={() => setEditingCell(null)}
+                            />
+                          ) : null
                         ) : (
-                          <span className="text-slate-700">{val == null ? '' : String(val)}</span>
+                          <span className="text-slate-700">
+                            <RichText value={val} />
+                          </span>
                         )}
                       </td>
                     );

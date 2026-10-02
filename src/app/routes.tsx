@@ -8,6 +8,7 @@ import { WorkspacePage } from '@/pages/workspace/WorkspacePage';
 import { AppShell } from '@/components/layout/AppShell';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { LegalPage } from '@/pages/legal/LegalPage';
+import { ReferenceRedirectPage } from '@/pages/ReferenceRedirectPage';
 
 export function AppRoutes() {
   return (
@@ -16,10 +17,46 @@ export function AppRoutes() {
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
       <Route path="/legal" element={<LegalPage />} />
-      <Route path="/settings" element={<ProtectedRoute><AdminSettingsPage /></ProtectedRoute>} />
-      <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
-      <Route path="/admin" element={<ProtectedRoute><AdminSettingsPage /></ProtectedRoute>} />
-      <Route path="/w/:workspaceSlug/p/:projectSlug" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <AdminSettingsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/home"
+        element={
+          <ProtectedRoute>
+            <HomePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute>
+            <AdminSettingsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/r/:urlKey"
+        element={
+          <ProtectedRoute>
+            <ReferenceRedirectPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/w/:workspaceSlug/p/:projectSlug"
+        element={
+          <ProtectedRoute>
+            <AppShell />
+          </ProtectedRoute>
+        }
+      >
         <Route index element={<WorkspacePage />} />
         <Route path="page/:pageId" element={<WorkspacePage />} />
       </Route>
