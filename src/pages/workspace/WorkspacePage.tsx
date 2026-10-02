@@ -18,6 +18,7 @@ import { useDeletePage, useRenamePage } from '@/hooks/usePageMutations';
 import { useAccess } from '@/hooks/useAccess';
 import { canEditProject, isSystemAdmin } from '@/lib/permissions';
 import { useAuth } from '@/hooks/useAuth';
+import { RevisionBrowser } from '@/features/sheet-page/components/RevisionBrowser';
 
 const KIND_LABEL: Record<PageKind, string> = {
   context: 'Context Page',
@@ -210,7 +211,7 @@ export function WorkspacePage() {
 
         {page.kind === 'data' && (
           <div className="flex-1 overflow-hidden">
-            <DataTable pageId={page.id} projectId={currentProject?.id ?? null} />
+            <DataTable pageId={page.id} projectId={currentProject?.id ?? null} workspaceId={currentWorkspace.id} pageTitle={page.title} mayEdit={mayEdit} />
           </div>
         )}
 
@@ -231,7 +232,7 @@ export function WorkspacePage() {
 
         {page.kind === 'sheet' && currentProject && (
           <div className="flex-1 overflow-hidden">
-            <SheetTable sheetPage={page} projectId={currentProject.id} />
+            <div className="h-full flex flex-col"><div className="flex justify-end border-b bg-white px-4 py-2"><RevisionBrowser pageId={page.id} pageTitle={page.title} workspaceId={currentWorkspace.id} mayEdit={mayEdit} /></div><div className="min-h-0 flex-1"><SheetTable sheetPage={page} projectId={currentProject.id} /></div></div>
           </div>
         )}
 

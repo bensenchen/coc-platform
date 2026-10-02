@@ -150,9 +150,16 @@ export interface Database {
         taken_by: string | null;
         content: Json;
       }>;
+      subscription_entitlement: Table<{ workspace_id:string; feature_key:string; enabled:boolean; limit_value:number|null; valid_until:string|null; source:string; metadata:Json; updated_at:string }>;
+      provider_connection: Table<{ id:string; workspace_id:string; provider:'google'; external_account_id:string; display_name:string; credential_ref:string; scopes:string[]; created_by:string|null; created_at:string; revoked_at:string|null }>;
+      retrieval_audit_event: Table<{ id:string; occurred_at:string; workspace_id:string; project_id:string; actor_id:string|null; purpose:string; query_text:string|null; result_entity_ids:string[] }>;
     };
     Views: Record<string, never>;
     Functions: {
+      has_feature: { Args:{p_workspace_id:string;p_feature_key:string}; Returns:boolean };
+      take_page_snapshot: { Args:{p_page_id:string}; Returns:Database['public']['Tables']['page_snapshot']['Row'] };
+      trace_entity_dependencies: { Args:{p_project_id:string;p_entity_id:string}; Returns:{direction:string;entity_type:string;entity_id:string;relationship:string}[] };
+      retrieve_project_context: { Args:{p_project_id:string;p_query:string;p_purpose:string;p_limit?:number}; Returns:{entity_type:string;entity_id:string;title:string;content:string;source_ref:string;updated_at:string}[] };
       create_workspace_for_user: {
         Args: { workspace_name: string };
         Returns: Database['public']['Tables']['workspace']['Row'];
